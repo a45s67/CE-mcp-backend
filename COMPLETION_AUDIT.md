@@ -23,9 +23,9 @@ The post-onboarding rebuild installed successfully with all runtime dependencies
 in a disposable Python 3.12 environment, exposed the new live-smoke entry point
 and 20 contracts, and resolved the packaged bridge through the product
 installer. Wheel SHA-256 is
-`9E7DE4872081A04F539214589E2B21CFEC4D3AB298EE74BBFA306A17535A1B54`;
+`C759CFFD52F2FB5D6AFBF945CB13ECAEA3B6918CFDC33B778440B40403E46308`;
 sdist SHA-256 is
-`C8EB7F2CCBD8DBE1D402F6E8A789C77C7AD2DA400685C24A5D634D2A6306C6F6`.
+`9DFF4C84368A7C5ED0CB03DAA28EA15AB387737EEFAB71EECC85907B83AA2FAD`.
 
 ## User objective
 
