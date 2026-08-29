@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.memory_read",
+  "description": "Read bounded raw or typed target memory and return resolved addresses.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["mode", "address", "size"],
+        "properties": {
+          "mode": {"const": "raw"},
+          "address": {"type": "string", "minLength": 1, "maxLength": 512},
+          "size": {"type": "integer", "minimum": 1, "maximum": 1048576},
+          "encoding": {"type": "string", "enum": ["hex", "base64"]},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["mode", "address", "dataType"],
+        "properties": {
+          "mode": {"const": "typed"},
+          "address": {"type": "string", "minLength": 1, "maxLength": 512},
+          "dataType": {"type": "string", "enum": ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64", "pointer", "string", "wstring"]},
+          "count": {"type": "integer", "minimum": 1, "maximum": 65536},
+          "maxStringBytes": {"type": "integer", "minimum": 1, "maximum": 65536},
+          "followPointers": {"type": "array", "items": {"type": "string", "minLength": 3, "maxLength": 20}, "maxItems": 32},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["session", "resolvedAddress", "complete"],
+    "properties": {
+      "session": {"type": "object"},
+      "resolvedAddress": {"type": "object"},
+      "pointerPath": {"type": "array", "items": {"type": "object"}, "maxItems": 33},
+      "dataType": {"type": "string"},
+      "value": {},
+      "bytes": {"type": "string", "maxLength": 2097152},
+      "encoding": {"type": "string", "enum": ["hex", "base64"]},
+      "complete": {"type": "boolean"},
+      "unreadableRanges": {"type": "array", "items": {"type": "object"}, "maxItems": 256}
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

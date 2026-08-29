@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["code", "message", "recoverable", "safeToRetry"],
+  "properties": {
+    "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"},
+    "message": {"type": "string", "minLength": 1, "maxLength": 512},
+    "recoverable": {"type": "boolean"},
+    "safeToRetry": {"type": "boolean"},
+    "currentState": {"type": "string", "maxLength": 64},
+    "suggestedAction": {"type": "string", "maxLength": 512},
+    "details": {"type": "object"}
+  },
+  "additionalProperties": false
+}

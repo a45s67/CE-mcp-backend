@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.registers",
+  "description": "Read general and optional XMM registers for the currently stopped debugger thread.",
+  "inputSchema": {"type": "object", "oneOf": [
+    {"type": "object", "required": ["action", "expectedGeneration", "expectedStopGeneration"], "properties": {
+      "action": {"const": "read"}, "includeVectors": {"type": "boolean"},
+      "expectedGeneration": {"type": "integer", "minimum": 1},
+      "expectedStopGeneration": {"type": "integer", "minimum": 1}
+    }, "additionalProperties": false}
+  ]},
+  "outputSchema": {"type": "object", "required": ["action", "session", "stopGeneration", "architecture", "general"], "properties": {
+    "action": {"const": "read"}, "session": {"type": "object"},
+    "stopGeneration": {"type": "integer", "minimum": 1},
+    "architecture": {"type": "string", "enum": ["x86", "x86_64"]},
+    "general": {"type": "object"}, "vectors": {"type": "object"}
+  }, "additionalProperties": false},
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

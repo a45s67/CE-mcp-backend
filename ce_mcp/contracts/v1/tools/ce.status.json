@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.status",
+  "description": "Report backend, bridge, Cheat Engine, target, and capability state without loading DBK or DBVM.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["backend", "bridge", "capabilities"],
+    "properties": {
+      "backend": {
+        "type": "object",
+        "required": ["version", "protocolVersion"],
+        "properties": {
+          "version": {"type": "string", "minLength": 1, "maxLength": 32},
+          "protocolVersion": {"type": "integer", "minimum": 1, "maximum": 1}
+        },
+        "additionalProperties": false
+      },
+      "bridge": {
+        "type": "object",
+        "required": ["connected"],
+        "properties": {
+          "connected": {"type": "boolean"},
+          "version": {"type": "string", "minLength": 1, "maxLength": 32},
+          "diagnostic": {"type": "string", "maxLength": 512},
+          "dbvmReadiness": {"type": "string", "enum": ["ready", "not-ready", "unverified"]}
+        },
+        "additionalProperties": false
+      },
+      "session": {
+        "type": "object",
+        "required": ["sessionId", "generation", "state", "pid", "architecture", "pointerWidth"],
+        "properties": {
+          "sessionId": {"type": "string", "minLength": 8, "maxLength": 128},
+          "generation": {"type": "integer", "minimum": 1},
+          "state": {"type": "string", "enum": ["running", "paused", "exited"]},
+          "pid": {"type": "integer", "minimum": 1},
+          "architecture": {"type": "string", "enum": ["x86", "x86_64"]},
+          "pointerWidth": {"type": "integer", "enum": [32, 64]}
+        },
+        "additionalProperties": false
+      },
+      "capabilities": {
+        "type": "object",
+        "required": ["available", "enabled", "disabledReasons", "limits"],
+        "properties": {
+          "available": {"type": "array", "items": {"type": "string"}, "maxItems": 256},
+          "enabled": {"type": "array", "items": {"type": "string"}, "maxItems": 256},
+          "disabledReasons": {"type": "object"},
+          "limits": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

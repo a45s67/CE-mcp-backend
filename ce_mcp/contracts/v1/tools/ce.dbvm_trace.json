@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","name":"ce.dbvm_trace",
+  "description":"Control the single generation-owned bounded DBVM trace-on-breakpoint resource. Requires dual local authorization and user-preloaded DBK/DBVM. CAPABILITY_UNAVAILABLE or CE_API_ERROR may mean the user has not enabled DBK/DBVM, or DBVM became unavailable. Check CE and ce.status; this tool never initializes them.",
+  "inputSchema":{"type":"object","oneOf":[
+    {"type":"object","required":["action","expectedGeneration"],"properties":{"action":{"const":"status"},"traceId":{"type":"string","pattern":"^trace-[0-9a-f]{8}-[0-9a-f]{8}$"},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false},
+    {"type":"object","required":["action","address","stepCount","expectedGeneration"],"properties":{"action":{"const":"start"},"address":{"type":"string","minLength":1,"maxLength":512},"stepCount":{"type":"integer","minimum":1,"maximum":1024},"captureStack":{"type":"boolean"},"captureFpu":{"type":"boolean"},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false},
+    {"type":"object","required":["action","traceId","expectedGeneration"],"properties":{"action":{"const":"results"},"traceId":{"type":"string","pattern":"^trace-[0-9a-f]{8}-[0-9a-f]{8}$"},"cursor":{"type":"string","pattern":"^[0-9]{1,10}$"},"limit":{"type":"integer","minimum":1,"maximum":200},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false},
+    {"type":"object","required":["action","traceId","expectedGeneration"],"properties":{"action":{"const":"archive_results"},"traceId":{"type":"string","pattern":"^trace-[0-9a-f]{8}-[0-9a-f]{8}$"},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false},
+    {"type":"object","required":["action","traceId","expectedGeneration"],"properties":{"action":{"const":"stop"},"traceId":{"type":"string","pattern":"^trace-[0-9a-f]{8}-[0-9a-f]{8}$"},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false},
+    {"type":"object","required":["action","traceId","expectedGeneration"],"properties":{"action":{"const":"remove"},"traceId":{"type":"string","pattern":"^trace-[0-9a-f]{8}-[0-9a-f]{8}$"},"expectedGeneration":{"type":"integer","minimum":1}},"additionalProperties":false}
+  ]},
+  "outputSchema":{"type":"object","required":["action","session"],"properties":{"action":{"type":"string","enum":["status","start","results","archive_results","stop","remove"]},"session":{"type":"object"},"trace":{"type":"object"},"artifact":{"type":"object"},"itemCount":{"type":"integer","minimum":0,"maximum":1024},"items":{"type":"array","items":{"type":"object"},"maxItems":200},"nextCursor":{"type":"string"},"truncated":{"type":"boolean"},"stopRequested":{"type":"boolean"},"removed":{"type":"boolean"}},"additionalProperties":false},
+  "annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false}
+}

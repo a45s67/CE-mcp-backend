@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.threads",
+  "description": "List target thread identifiers. CE Lua does not expose reliable per-thread state or context through this API.",
+  "inputSchema": {"type": "object", "oneOf": [
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {
+      "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^[0-9]{1,10}$"},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+      "expectedGeneration": {"type": "integer", "minimum": 1}
+    }, "additionalProperties": false}
+  ]},
+  "outputSchema": {"type": "object", "required": ["action", "session", "items", "truncated"], "properties": {
+    "action": {"const": "list"}, "session": {"type": "object"},
+    "items": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["threadId", "threadIdHex"], "properties": {
+      "threadId": {"type": "integer", "minimum": 1}, "threadIdHex": {"type": "string", "pattern": "^0x[0-9A-F]{8}$"}
+    }, "additionalProperties": false}},
+    "nextCursor": {"type": "string"}, "truncated": {"type": "boolean"}
+  }, "additionalProperties": false},
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

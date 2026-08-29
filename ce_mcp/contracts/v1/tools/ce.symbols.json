@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.symbols",
+  "description": "Resolve symbols and enumerate bounded module or symbol metadata.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["action", "expression"],
+        "properties": {
+          "action": {"const": "resolve"},
+          "expression": {"type": "string", "minLength": 1, "maxLength": 512},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action", "address"],
+        "properties": {
+          "action": {"const": "describe"},
+          "address": {"type": "string", "minLength": 1, "maxLength": 512},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": {"const": "modules"},
+          "nameFilter": {"type": "string", "maxLength": 260},
+          "cursor": {"type": "string", "maxLength": 256},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": {"const": "list"},
+          "moduleFilter": {"type": "string", "maxLength": 260},
+          "nameFilter": {"type": "string", "maxLength": 512},
+          "cursor": {"type": "string", "maxLength": 256},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["action", "session"],
+    "properties": {
+      "action": {"type": "string", "enum": ["resolve", "describe", "modules", "list"]},
+      "session": {"type": "object"},
+      "address": {"type": "object"},
+      "symbol": {"type": "object"},
+      "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
+      "nextCursor": {"type": "string", "maxLength": 256},
+      "truncated": {"type": "boolean"}
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

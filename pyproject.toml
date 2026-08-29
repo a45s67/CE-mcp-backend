@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ce-mcp-backend"
+version = "0.0.1"
+description = "Cheat Engine MCP backend and bridge contracts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["mcp>=2.1,<3"]
+
+[project.scripts]
+ce-mcp-backend = "ce_mcp.mcp_server:main"
+ce-mcp-smoke = "ce_mcp.cli:main"
+ce-mcp-live-smoke = "ce_mcp.mcp_live_smoke:main"
+ce-mcp-e2e-smoke = "ce_mcp.e2e_smoke:main"
+ce-mcp-disconnect-smoke = "ce_mcp.disconnect_smoke:main"
+ce-mcp-relative-scan-smoke = "ce_mcp.relative_scan_smoke:main"
+ce-mcp-pointer-smoke = "ce_mcp.pointer_smoke:main"
+ce-mcp-artifact-smoke = "ce_mcp.artifact_smoke:main"
+ce-mcp-debug-smoke = "ce_mcp.debug_smoke:main"
+ce-mcp-debug-disconnect-smoke = "ce_mcp.debug_disconnect_smoke:main"
+ce-mcp-analysis-smoke = "ce_mcp.analysis_smoke:main"
+ce-mcp-signature-smoke = "ce_mcp.signature_smoke:main"
+ce-mcp-structure-smoke = "ce_mcp.structure_smoke:main"
+ce-mcp-performance-smoke = "ce_mcp.performance_smoke:main"
+ce-mcp-target-exit-smoke = "ce_mcp.target_exit_smoke:main"
+ce-mcp-install-bridge = "ce_mcp.install_bridge:main"
+
+[tool.setuptools.packages.find]
+include = ["ce_mcp*"]
+
+[tool.setuptools.package-data]
+ce_mcp = ["contracts/**/*.json"]
+
+[tool.setuptools.data-files]
+"share/ce-mcp-backend/bridge" = [
+  "bridge/ce_mcp_bridge.lua",
+  "bridge/00_ce_mcp_policy.example.lua",
+]
+"share/ce-mcp-backend" = ["policy.example.json", "DBVM_DESIGN.md"]

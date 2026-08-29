@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.signature",
+  "description": "Generate an exact AOB signature unique within an explicit bounded target range.",
+  "inputSchema": {"type": "object", "oneOf": [
+    {"type": "object", "required": ["action", "address", "rangeStart", "rangeEnd", "expectedGeneration"], "properties": {
+      "action": {"const": "start"}, "address": {"type": "string", "minLength": 1, "maxLength": 512},
+      "rangeStart": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
+      "rangeEnd": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
+      "minBytes": {"type": "integer", "minimum": 4, "maximum": 64},
+      "maxBytes": {"type": "integer", "minimum": 4, "maximum": 64},
+      "protection": {"type": "string", "pattern": "^[+\\-*][Ww][+\\-*][Xx][+\\-*][Cc]$"},
+      "expectedGeneration": {"type": "integer", "minimum": 1}
+    }, "additionalProperties": false},
+    {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {
+      "action": {"const": "result"}, "operationId": {"type": "string", "pattern": "^sig-[0-9a-f]{8}-[0-9a-f]{8}$"},
+      "expectedGeneration": {"type": "integer", "minimum": 1}
+    }, "additionalProperties": false},
+    {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {
+      "action": {"const": "close"}, "operationId": {"type": "string", "pattern": "^sig-[0-9a-f]{8}-[0-9a-f]{8}$"},
+      "expectedGeneration": {"type": "integer", "minimum": 1}
+    }, "additionalProperties": false}
+  ]},
+  "outputSchema": {"type": "object", "required": ["action", "session"], "properties": {
+    "action": {"type": "string", "enum": ["start", "result", "close"]}, "session": {"type": "object"},
+    "operation": {"type": "object"}, "unique": {"type": "boolean"},
+    "pattern": {"type": "string", "pattern": "^[0-9A-F]{2}( [0-9A-F]{2}){3,63}$"},
+    "byteCount": {"type": "integer", "minimum": 4, "maximum": 64},
+    "offset": {"type": "integer", "minimum": 0}, "closed": {"type": "boolean"}
+  }, "additionalProperties": false},
+  "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+}

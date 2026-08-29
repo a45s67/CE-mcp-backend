@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.process",
+  "description": "List, attach, logically detach the MCP session, or inspect a target process.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": {"const": "list"},
+          "nameFilter": {"type": "string", "maxLength": 260},
+          "cursor": {"type": "string", "maxLength": 256},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action", "pid"],
+        "properties": {
+          "action": {"const": "attach"},
+          "pid": {"type": "integer", "minimum": 1},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action", "expectedGeneration"],
+        "properties": {
+          "action": {"const": "detach"},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action"],
+        "properties": {"action": {"const": "get"}},
+        "additionalProperties": false
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {"type": "string", "enum": ["list", "attach", "detach", "get"]},
+      "session": {"type": "object"},
+      "detached": {"type": "boolean"},
+      "ceHandleRetained": {"type": "boolean"},
+      "reconciled": {"type": "boolean"},
+      "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
+      "nextCursor": {"type": "string", "maxLength": 256},
+      "truncated": {"type": "boolean"}
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+}

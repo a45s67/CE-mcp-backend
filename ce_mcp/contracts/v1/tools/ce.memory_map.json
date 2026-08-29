@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.memory_map",
+  "description": "List bounded target memory regions with module and protection metadata.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "moduleFilter": {"type": "string", "maxLength": 260},
+      "protectionFilter": {"type": "string", "maxLength": 32},
+      "stateFilter": {"type": "string", "enum": ["commit", "reserve", "free"]},
+      "typeFilter": {"type": "string", "enum": ["image", "mapped", "private"]},
+      "cursor": {"type": "string", "maxLength": 256},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+      "expectedGeneration": {"type": "integer", "minimum": 1}
+    },
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["session", "items", "truncated"],
+    "properties": {
+      "session": {"type": "object"},
+      "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
+      "nextCursor": {"type": "string", "maxLength": 256},
+      "truncated": {"type": "boolean"}
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

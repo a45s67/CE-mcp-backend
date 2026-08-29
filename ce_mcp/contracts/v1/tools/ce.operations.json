@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.operations",
+  "description": "Inspect, list, or cancel session-bound long-running CE operations.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {"action": {"const": "get"}, "operationId": {"type": "string", "maxLength": 128}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+      {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "list"}, "cursor": {"type": "string", "maxLength": 256}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+      {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {"action": {"const": "cancel"}, "operationId": {"type": "string", "maxLength": 128}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
+    ]
+  },
+  "outputSchema": {
+    "type": "object", "required": ["action", "session"],
+    "properties": {
+      "action": {"type": "string", "enum": ["get", "list", "cancel"]}, "session": {"type": "object"},
+      "operation": {"type": "object"}, "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
+      "nextCursor": {"type": "string", "maxLength": 256}, "truncated": {"type": "boolean"}
+    }, "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+}

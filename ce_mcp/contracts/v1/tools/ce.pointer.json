@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.pointer",
+  "description": "Resolve or batch-validate bounded pointer chains using CE target-width pointer reads.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["action", "base", "offsets", "expectedGeneration"],
+        "properties": {
+          "action": {"const": "resolve"},
+          "base": {"type": "string", "minLength": 1, "maxLength": 512},
+          "offsets": {
+            "type": "array", "maxItems": 16,
+            "items": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}
+          },
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["action", "chains", "target", "expectedGeneration"],
+        "properties": {
+          "action": {"const": "validate"},
+          "chains": {
+            "type": "array", "minItems": 1, "maxItems": 500,
+            "items": {
+              "type": "object",
+              "required": ["base", "offsets"],
+              "properties": {
+                "base": {"type": "string", "minLength": 1, "maxLength": 512},
+                "offsets": {
+                  "type": "array", "maxItems": 16,
+                  "items": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "target": {"type": "string", "minLength": 1, "maxLength": 512},
+          "includeMisses": {"type": "boolean"},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["action", "session"],
+    "properties": {
+      "action": {"type": "string", "enum": ["resolve", "validate"]},
+      "session": {"type": "object"},
+      "base": {"type": "object"},
+      "offsets": {"type": "array", "items": {"type": "integer"}, "maxItems": 16},
+      "finalAddress": {"type": "object"},
+      "finalPointer": {"type": "object"},
+      "chain": {"type": "array", "items": {"type": "object"}, "maxItems": 17},
+      "target": {"type": "object"},
+      "total": {"type": "integer", "minimum": 0, "maximum": 500},
+      "matched": {"type": "integer", "minimum": 0, "maximum": 500},
+      "unreadable": {"type": "integer", "minimum": 0, "maximum": 500},
+      "matches": {"type": "array", "items": {"type": "object"}, "maxItems": 500},
+      "misses": {"type": "array", "items": {"type": "object"}, "maxItems": 500}
+    },
+    "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+}

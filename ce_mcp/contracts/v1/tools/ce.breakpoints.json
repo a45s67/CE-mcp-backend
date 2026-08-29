@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.breakpoints",
+  "description": "List, install, or remove generation-bound hardware breakpoints.",
+  "inputSchema": {"type": "object", "oneOf": [
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "list"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "address", "trigger", "expectedGeneration"], "properties": {"action": {"const": "set"}, "address": {"type": "string", "minLength": 1, "maxLength": 512}, "trigger": {"type": "string", "enum": ["execute", "write", "access"]}, "size": {"type": "integer", "enum": [1, 2, 4, 8]}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "breakpointId", "expectedGeneration"], "properties": {"action": {"const": "remove"}, "breakpointId": {"type": "string", "pattern": "^bp-[0-9a-f]{8}-[0-9a-f]{8}$"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
+  ]},
+  "outputSchema": {"type": "object", "required": ["action", "session"], "properties": {
+    "action": {"type": "string", "enum": ["list", "set", "remove"]}, "session": {"type": "object"},
+    "breakpoint": {"type": "object"}, "items": {"type": "array", "items": {"type": "object"}, "maxItems": 4},
+    "truncated": {"type": "boolean"}, "removed": {"type": "boolean"}
+  }, "additionalProperties": false},
+  "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.debug_control",
+  "description": "Control the probe-verified Windows debugger with stop-generation guards.",
+  "inputSchema": {"type": "object", "oneOf": [
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "status"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "start"}, "interface": {"const": "windows"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "pause"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "mode", "expectedGeneration", "expectedStopGeneration"], "properties": {"action": {"const": "continue"}, "mode": {"type": "string", "enum": ["run", "step_into", "step_over"]}, "expectedGeneration": {"type": "integer", "minimum": 1}, "expectedStopGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "detach"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
+  ]},
+  "outputSchema": {"type": "object", "required": ["action", "session", "debugger"], "properties": {
+    "action": {"type": "string", "enum": ["status", "start", "pause", "continue", "detach"]}, "session": {"type": "object"},
+    "debugger": {"type": "object"}, "pauseRequested": {"type": "boolean"}, "detached": {"type": "boolean"}
+  }, "additionalProperties": false},
+  "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+}

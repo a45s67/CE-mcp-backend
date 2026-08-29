@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ce.artifacts",
+  "description": "Create and manage immutable analysis artifacts inside the backend-controlled store.",
+  "inputSchema": {
+    "type": "object",
+    "oneOf": [
+      {
+        "type": "object", "required": ["action", "address", "size", "expectedGeneration"],
+        "properties": {
+          "action": {"const": "memory_dump"},
+          "address": {"type": "string", "minLength": 1, "maxLength": 512},
+          "size": {"type": "integer", "minimum": 1, "maximum": 16777216},
+          "expectedGeneration": {"type": "integer", "minimum": 1}
+        }, "additionalProperties": false
+      },
+      {
+        "type": "object", "required": ["action"],
+        "properties": {
+          "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^[0-9]{1,10}$"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200}
+        }, "additionalProperties": false
+      },
+      {
+        "type": "object", "required": ["action", "artifactId"],
+        "properties": {
+          "action": {"const": "get_metadata"},
+          "artifactId": {"type": "string", "pattern": "^art-[0-9a-f]{32}$"}
+        }, "additionalProperties": false
+      },
+      {
+        "type": "object", "required": ["action", "artifactId"],
+        "properties": {
+          "action": {"const": "preview"},
+          "artifactId": {"type": "string", "pattern": "^art-[0-9a-f]{32}$"},
+          "offset": {"type": "integer", "minimum": 0, "maximum": 16777216},
+          "size": {"type": "integer", "minimum": 1, "maximum": 4096}
+        }, "additionalProperties": false
+      },
+      {
+        "type": "object", "required": ["action", "artifactId"],
+        "properties": {
+          "action": {"const": "delete"},
+          "artifactId": {"type": "string", "pattern": "^art-[0-9a-f]{32}$"}
+        }, "additionalProperties": false
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object", "required": ["action"],
+    "properties": {
+      "action": {"type": "string", "enum": ["memory_dump", "list", "get_metadata", "preview", "delete"]},
+      "artifact": {"type": "object"}, "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
+      "nextCursor": {"type": "string"}, "truncated": {"type": "boolean"},
+      "offset": {"type": "integer", "minimum": 0}, "bytes": {"type": "string", "maxLength": 8192},
+      "encoding": {"const": "hex"}, "complete": {"type": "boolean"}, "deleted": {"type": "boolean"}
+    }, "additionalProperties": false
+  },
+  "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false}
+}
