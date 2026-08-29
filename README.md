@@ -63,10 +63,13 @@ DBK, or DBVM. Configure an MCP client with:
 
 ```json
 {
-  "command": "C:\\Users\\fish\\projects\\CE-mcp-backend\\.venv\\Scripts\\python.exe",
-  "args": ["-m", "ce_mcp.mcp_server", "--transport", "stdio"]
+  "command": "C:\\path\\to\\CE-mcp-backend\\.venv\\Scripts\\ce-mcp-backend.exe",
+  "args": ["--transport", "stdio"]
 }
 ```
+
+Use the absolute path produced by your own project environment; MCP clients do
+not necessarily inherit an interactive shell's `PATH`.
 
 The server discovers the single running CE instance and verifies that the
 named-pipe server PID is that CE process. If several CE instances are open, add
