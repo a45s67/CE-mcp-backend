@@ -1,11 +1,25 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from ce_mcp.install_bridge import install_bridge
+from ce_mcp.install_bridge import install_bridge, packaged_bridge_path
 
 
 class InstallBridgeTests(unittest.TestCase):
+    def test_packaged_path_falls_back_to_source_checkout_for_editable_install(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / "checkout" / "ce_mcp" / "install_bridge.py"
+            bridge = root / "checkout" / "bridge" / "ce_mcp_bridge.lua"
+            bridge.parent.mkdir(parents=True)
+            bridge.write_text("return true\n", encoding="utf-8")
+            with (
+                patch("ce_mcp.install_bridge.sysconfig.get_path", return_value=str(root / "data")),
+                patch("ce_mcp.install_bridge.__file__", str(module)),
+            ):
+                self.assertEqual(packaged_bridge_path(), bridge)
+
     def test_installs_atomically_and_refuses_implicit_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

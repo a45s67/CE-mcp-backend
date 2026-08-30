@@ -14,7 +14,13 @@ INSTALLED_FILENAME = "ce_mcp_bridge.lua"
 
 
 def packaged_bridge_path() -> Path:
-    return Path(sysconfig.get_path("data")) / "share" / "ce-mcp-backend" / "bridge" / BRIDGE_FILENAME
+    installed = Path(sysconfig.get_path("data")) / "share" / "ce-mcp-backend" / "bridge" / BRIDGE_FILENAME
+    if installed.is_file():
+        return installed
+    checkout = Path(__file__).resolve().parents[1] / "bridge" / BRIDGE_FILENAME
+    if checkout.is_file():
+        return checkout
+    return installed
 
 
 def install_bridge(source: Path, ce_directory: Path, *, replace: bool = False) -> Path:
