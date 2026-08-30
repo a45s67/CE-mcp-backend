@@ -1,6 +1,6 @@
 {
   "name": "ce-mcp-backend",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260830172031",
   "description": "Safe structured Cheat Engine 7.7 dynamic analysis through MCP.",
   "author": {
     "name": "fish Yu"

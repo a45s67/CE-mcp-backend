@@ -88,17 +88,14 @@ the environment.
 
 The plugin also ships the `cheat-engine-debugging` skill. Installing the Codex
 plugin does not silently modify Cheat Engine: install the Lua bridge once with
-`ce-mcp-install-bridge`, then restart CE. A separate marketplace repository can
-publish this plugin with the usual flow:
+`ce-mcp-install-bridge`, then restart CE. Install or refresh the published
+plugin with:
 
 ```powershell
-codex plugin marketplace add <owner>/codex-marketplace
-codex plugin remove ce-mcp-backend@<marketplace-name>
-codex plugin add ce-mcp-backend@<marketplace-name>
+codex plugin marketplace add a45s67/codex-marketplace
+codex plugin remove ce-mcp-backend@a45s67
+codex plugin add ce-mcp-backend@a45s67
 ```
-
-Replace the placeholders only after a real marketplace repository and name
-exist; this source repository currently has no configured Git remote.
 
 The server discovers the single running CE instance and verifies that the
 named-pipe server PID is that CE process. If several CE instances are open, add
