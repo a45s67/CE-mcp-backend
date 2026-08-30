@@ -71,6 +71,35 @@ DBK, or DBVM. Configure an MCP client with:
 Use the absolute path produced by your own project environment; MCP clients do
 not necessarily inherit an interactive shell's `PATH`.
 
+### Codex plugin
+
+This repository is also a validated Codex plugin. Its root [`.mcp.json`](.mcp.json)
+uses the same self-contained pattern as IDA Pro MCP:
+
+```text
+uv run --locked ce-mcp-backend --transport stdio
+```
+
+Codex runs that command with the installed plugin root as `cwd`, so uv reads
+the bundled `pyproject.toml` and `uv.lock`. A marketplace installation therefore
+does not require a machine-specific `.venv` path or manual MCP JSON. `uv` must
+be available on `PATH`; the first MCP startup may take longer while uv creates
+the environment.
+
+The plugin also ships the `cheat-engine-debugging` skill. Installing the Codex
+plugin does not silently modify Cheat Engine: install the Lua bridge once with
+`ce-mcp-install-bridge`, then restart CE. A separate marketplace repository can
+publish this plugin with the usual flow:
+
+```powershell
+codex plugin marketplace add <owner>/codex-marketplace
+codex plugin remove ce-mcp-backend@<marketplace-name>
+codex plugin add ce-mcp-backend@<marketplace-name>
+```
+
+Replace the placeholders only after a real marketplace repository and name
+exist; this source repository currently has no configured Git remote.
+
 The server discovers the single running CE instance and verifies that the
 named-pipe server PID is that CE process. If several CE instances are open, add
 `"--ce-pid", "<pid>"` to `args`; discovery intentionally fails instead of

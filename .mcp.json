@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "cheat-engine": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--locked",
+        "ce-mcp-backend",
+        "--transport",
+        "stdio"
+      ],
+      "cwd": "."
+    }
+  }
+}

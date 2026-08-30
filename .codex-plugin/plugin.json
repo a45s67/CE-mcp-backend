@@ -1,0 +1,34 @@
+{
+  "name": "ce-mcp-backend",
+  "version": "0.1.0",
+  "description": "Safe structured Cheat Engine 7.7 dynamic analysis through MCP.",
+  "author": {
+    "name": "fish Yu"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "cheat-engine",
+    "dynamic-analysis",
+    "debugging",
+    "reverse-engineering",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Cheat Engine MCP",
+    "shortDescription": "Safe structured Cheat Engine dynamic analysis",
+    "longDescription": "Connect Codex to Cheat Engine 7.7 for bounded process, memory, scan, disassembly, debugger, signature, and structure workflows.",
+    "developerName": "fish Yu",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "MCP"
+    ],
+    "defaultPrompt": [
+      "Inspect the active Cheat Engine target safely.",
+      "Find and explain code that accesses this value.",
+      "Debug this authorized process and summarize the stop."
+    ]
+  }
+}
