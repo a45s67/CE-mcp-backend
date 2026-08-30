@@ -185,6 +185,8 @@ class LuaBridgeTests(unittest.TestCase):
     def test_only_probe_verified_relative_refinements_are_enabled(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")
         self.assertIn('["scan.refine.comparison"]', source)
+        self.assertIn('["pointer.scan"]', source)
+        self.assertNotIn("CE 7.5 Lua exposes", source)
         for mode in ("increased", "decreased", "changed", "unchanged"):
             self.assertIn(f"{mode} = true", source)
         self.assertNotIn("between = true", source)

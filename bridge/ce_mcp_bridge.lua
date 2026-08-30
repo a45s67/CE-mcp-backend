@@ -390,7 +390,7 @@ handlers["status.get"] = function(_)
   end
   local disabledReasons = {
     ["scan.refine.comparison"] = "between/bigger/smaller modes are not probe-verified",
-    ["pointer.scan"] = "CE 7.5 Lua exposes no result-bearing, cancellable pointer scanner API",
+    ["pointer.scan"] = "CE Lua exposes no verified result-bearing, cancellable pointer scanner lifecycle",
   }
   local hypervisorReason
   if not bridgeHypervisorEnabled then

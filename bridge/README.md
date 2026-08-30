@@ -1,61 +1,55 @@
-# CE Lua Bridge
+# CE Lua bridge
 
-`ce_mcp_bridge.lua` is the in-process Cheat Engine adapter. It intentionally
-contains no MCP server, public network listener, authentication, workflow, host
-shell, GUI automation, injection, or arbitrary Lua evaluation.
+`ce_mcp_bridge.lua` is the in-process Cheat Engine 7.7 adapter. It has no MCP
+listener, public network endpoint, host shell, GUI automation, injection, or
+arbitrary Lua evaluation.
 
-## Load
+## Installation and lifecycle
 
-In Cheat Engine 7.5, open the Lua Engine and execute:
+Use `ce-mcp-install-bridge --ce-dir <directory>` to install the bridge as
+`autorun\ce_mcp_bridge.lua`, then restart Cheat Engine. For development it can
+also be loaded from the Lua Engine with `dofile`.
 
-```lua
-dofile([[C:\path\to\CE-mcp-backend\bridge\ce_mcp_bridge.lua]])
-```
+The bridge creates `\\.\pipe\CE_MCP_Backend_v1_<CE_PID>`. Normal users set no
+pipe environment variable. The sidecar discovers one CE instance or requires
+an explicit `--ce-pid` when several are running, then verifies the pipe server
+PID. `CE_MCP_PIPE_NAME` exists only as an integration-test override.
 
-The script creates `\\.\pipe\CE_MCP_Backend_v1_<CE_PID>` using
-`getCheatEngineProcessID()`. The sidecar discovers the only running CE instance
-automatically, so ordinary users set no environment variable. If several CE
-instances are running, select one with sidecar `--ce-pid <pid>`; ambiguity is
-never resolved silently. `CE_MCP_PIPE_NAME` is a name-only integration-test
-override. Reloading the script first destroys the previous worker and pipe.
+Reloading stops the previous bridge. Disconnect, detach, target replacement,
+and CE shutdown clean generation-owned scans, signatures, breakpoints, and
+debugger state.
 
-## Current bridge methods
+## Implemented method groups
 
-- `status.get`
-- `process.list`
-- `process.attach`
-- `process.get`
-- `process.detach`
-- `memory.read` in raw mode
-- asynchronous `scan.start|refine|results|close`
-- `operations.get|list|cancel`
-- bounded `pointer.resolve|validate`
+- status and process lifecycle;
+- bounded memory reads, maps, comparison, and checksum;
+- module/symbol lookup and disassembly;
+- asynchronous scans and operation lifecycle;
+- bounded pointer-chain resolution and validation;
+- signature generation;
+- debugger control, events, threads, registers, and hardware breakpoints;
+- explicit reads using sidecar-owned structure definitions;
+- bounded memory chunks used by the sidecar artifact store.
 
-Every CE API call executes through `thread.synchronize`; the worker thread only
-performs blocking framed I/O. Frames use `uint32-le length + UTF-8 JSON` and are
-limited to 8 MiB.
+Exact handler names and schemas are derived from
+`ce_mcp/contracts/v1/tools/`; [CE_MCP_TOOLS.md](../CE_MCP_TOOLS.md) is the
+human-readable catalog.
 
-`process.detach` ends the MCP target session and invalidates its generation.
-Cheat Engine 7.5 has no reliable Lua API for closing the process handle itself,
-so the result explicitly returns `ceHandleRetained: true`. A later explicit
-attach starts a new MCP session; no memory/debug operation is accepted while
-logically detached.
+Every CE API call is marshalled through `thread.synchronize`; the worker thread
+performs only blocking framed pipe I/O. Frames are `uint32-le length + UTF-8
+JSON` and are limited to 8 MiB.
 
-Scan handles are bound to the target generation. At most one scan may execute
-at once and at most eight handles may remain open. Results are returned in pages
-of at most 200 entries. Cancel, close, detach, or target replacement destroys
-the underlying CE `MemScan`/`FoundList` objects.
+Logical detach invalidates the MCP generation. CE may retain its native process
+handle, which is reported as `ceHandleRetained: true`; no target operation is
+accepted until another explicit attach.
 
-Initial scans, refinement, polling, paged results, cancel, and close are
-operation-backed. The scan owner thread preserves the attached FoundList until
-CE has completely finished `nextScan`, then atomically replaces it.
+## Deliberate limits
 
-Exact plus unchanged/increased/decreased/changed refinement are enabled and
-MCP-verified on CE 7.5 x64. Between/bigger/smaller refinement remain
-fail-closed. Running-scan cancellation uses the probe-verified MemScan
-destruction path.
+The bridge does not expose writes, allocation, protection changes, assembly,
+patches, injection, or generic Lua. Pointer scanning and unverified comparison
+refinements remain unavailable. DBVM contracts are disabled by normal policy
+and the bridge never initializes DBK or DBVM.
 
-The CE Lua `createPipe` API does not expose an explicit security descriptor. The
-sidecar accepts only a local `\\.\pipe\...` name and the deployment account must
-give Cheat Engine a restrictive Windows token/default DACL. Explicit pipe ACLs
-remain a release gate for a native bridge variant or a verified CE API extension.
+CE Lua `createPipe` does not accept an explicit security descriptor. The bridge
+therefore relies on CE's process token/default DACL, while the sidecar accepts
+only local pipe names and verifies the server PID.

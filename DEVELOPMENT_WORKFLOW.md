@@ -72,11 +72,11 @@ evidence exists:
 
 - contract fixtures pass;
 - Lua syntax and handler coverage pass;
-- standalone lifecycle probe passes on real CE 7.5;
-- bridge integration passes on real CE 7.5;
+- standalone lifecycle probe passes on the supported CE 7.7 baseline;
+- bridge integration passes on the supported CE 7.7 baseline;
 - timeout/cancel/cleanup behavior has a deterministic result;
 - the production vertical slice passes;
-- the roadmap records remaining platform coverage.
+- remaining platform coverage is recorded in `TODO.md` or probe results.
 
 Until then, the handler must return `CAPABILITY_UNAVAILABLE`, status must state
 the reason, and documentation must call the capability unverified. Checked-in
@@ -121,7 +121,8 @@ working on CE.
 Before merging a CE-facing change, verify:
 
 - [ ] Documentation and official binding source were read for the exact API.
-- [ ] Reference call order and cleanup order were copied into design notes.
+- [ ] Reference call order and cleanup order were recorded with the probe or
+      implementation.
 - [ ] Object/thread ownership is explicit.
 - [ ] Standalone probe exists and passed, or capability remains fail-closed.
 - [ ] No old handle survives generation change, detach, or target replacement.

@@ -1,5 +1,28 @@
 # Probe results
 
+## 2026-08-31 — Published Codex plugin live matrix on CE 7.7
+
+- Installed `ce-mcp-backend@a45s67` was exercised through its exposed MCP tools
+  against disposable x64 Python and Notepad targets; no arbitrary Lua or target
+  write was used.
+- Verified status/process lifecycle, module and symbol resolution, bounded raw
+  and typed memory reads, maps and pagination, compare/checksum, all
+  disassembly actions, exact and increased scans, operation listing, pointer
+  resolution/validation, signature generation, structure CRUD/read, and
+  artifact dump/list/metadata/preview/delete.
+- Verified Windows debugger start/status/detach, thread listing, execute/write/
+  access hardware breakpoints, the four-slot limit, events, general and XMM
+  registers, stale-stop rejection, step event, synchronous pause/resume, and
+  breakpoint cleanup.
+- Verified stale session rejection, detached `NO_TARGET`, target-exit cleanup,
+  invalid read limits, unreadable memory, and normal-profile DBVM rejection.
+- Scan and signature cancel requests were issued, but the bounded operations
+  completed before cancellation won the race. Deterministic running/queued
+  cancellation remains covered by the dedicated lifecycle gates rather than
+  being inferred from this timing-dependent run.
+- All disposable processes, debugger resources, operations, structures, and
+  artifacts created by the matrix were removed.
+
 ## CE 7.7 readiness-query runtime probe (2026-08-29)
 
 `C:\tools\Cheat Engine` contains CE `7.7.0.10621`. Its `celua.txt` formally
