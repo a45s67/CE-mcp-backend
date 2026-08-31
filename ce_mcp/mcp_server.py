@@ -22,7 +22,12 @@ from .audit import JsonlAuditLog
 from .artifacts import ArtifactStore
 from .service import BackendService
 from .policy import Policy
-from .transport import DEFAULT_PIPE_NAME, WindowsNamedPipeBridgeClient
+from .server_config import ServerConfig
+from .transport import (
+    DEFAULT_PIPE_NAME,
+    WindowsNamedPipeBridgeClient,
+    enumerate_cheat_engine_pids,
+)
 
 
 class StaticTokenVerifier:
@@ -45,19 +50,30 @@ class StaticTokenVerifier:
         )
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(config: ServerConfig | None = None) -> argparse.ArgumentParser:
+    config = config or ServerConfig()
     parser = argparse.ArgumentParser(prog="ce-mcp-backend")
-    parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--config", type=Path, help="strict JSON server configuration")
+    parser.add_argument(
+        "--transport", choices=("stdio", "streamable-http"), default=config.transport
+    )
+    parser.add_argument("--host", default=config.host)
+    parser.add_argument("--port", type=int, default=config.port)
     parser.add_argument(
         "--token-file",
         type=Path,
+        default=config.token_file,
         help="read the Streamable HTTP bearer token from a local file",
     )
     parser.add_argument("--pipe", default=DEFAULT_PIPE_NAME)
     parser.add_argument("--ce-pid", type=int, help="select one CE instance when auto-discovery is ambiguous")
-    parser.add_argument("--deadline-ms", type=int, default=5_000)
+    parser.add_argument("--deadline-ms", type=int, default=config.request_deadline_ms)
+    parser.add_argument(
+        "--exit-when-ce-exits",
+        action=argparse.BooleanOptionalAction,
+        default=config.exit_when_ce_exits,
+        help="stop an HTTP server when its explicitly selected CE PID exits",
+    )
     parser.add_argument(
         "--policy-config", type=Path,
         help="local JSON capability policy; defaults to the debug profile",
@@ -80,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(__file__).resolve().parent / "contracts" / "v1" / "tools",
     )
     return parser
+
+
+def parse_options(argv: Sequence[str] | None = None):
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", type=Path)
+    preliminary, _ = pre_parser.parse_known_args(argv)
+    config = ServerConfig.load(preliminary.config)
+    return build_parser(config).parse_args(argv)
 
 
 def create_service(options) -> BackendService:
@@ -174,11 +198,48 @@ def create_http_app(service: BackendService, host: str, port: int, token: str):
     )
 
 
-def run_http(service: BackendService, host: str, port: int, token: str) -> None:
+async def _watch_ce_exit(server, ce_pid: int, poll_seconds: float = 0.5) -> None:
+    while True:
+        await anyio.sleep(poll_seconds)
+        if ce_pid not in enumerate_cheat_engine_pids():
+            server.should_exit = True
+            return
+
+
+async def _run_http(
+    service: BackendService,
+    host: str,
+    port: int,
+    token: str,
+    ce_pid: int | None,
+    exit_when_ce_exits: bool,
+) -> None:
     import uvicorn
 
     app = create_http_app(service, host, port, token)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
+    if not exit_when_ce_exits:
+        await server.serve()
+        return
+    assert ce_pid is not None
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(_watch_ce_exit, server, ce_pid)
+        try:
+            await server.serve()
+        finally:
+            tasks.cancel_scope.cancel()
+
+
+def run_http(
+    service: BackendService,
+    host: str,
+    port: int,
+    token: str,
+    *,
+    ce_pid: int | None = None,
+    exit_when_ce_exits: bool = False,
+) -> None:
+    anyio.run(_run_http, service, host, port, token, ce_pid, exit_when_ce_exits)
 
 
 def load_http_token(token_file: Path | None) -> str:
@@ -200,13 +261,26 @@ def load_http_token(token_file: Path | None) -> str:
 
 
 def run(argv: Sequence[str] | None = None) -> None:
-    options = build_parser().parse_args(argv)
+    options = parse_options(argv)
+    if options.exit_when_ce_exits and (
+        options.transport != "streamable-http" or options.ce_pid is None
+    ):
+        raise ValueError(
+            "--exit-when-ce-exits requires Streamable HTTP and an explicit --ce-pid"
+        )
     service = create_service(options)
     if options.transport == "stdio":
         anyio.run(run_stdio, service)
         return
     token = load_http_token(options.token_file)
-    run_http(service, options.host, options.port, token)
+    run_http(
+        service,
+        options.host,
+        options.port,
+        token,
+        ce_pid=options.ce_pid,
+        exit_when_ce_exits=options.exit_when_ce_exits,
+    )
 
 
 def main() -> None:

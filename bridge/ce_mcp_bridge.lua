@@ -48,6 +48,7 @@ local state = {
   connected = false,
   worker = nil,
   pipe = nil,
+  serverLaunchAttempted = false,
   pid = 0,
   generation = 0,
   sessionId = nil,
@@ -2325,12 +2326,39 @@ function StopCEMCPBridge()
   log("stopped")
 end
 
+local function startMCPServer()
+  if state.serverLaunchAttempted then return end
+  state.serverLaunchAttempted = true
+  local ceDirectory = getCheatEngineDir()
+  local mcpDirectory = ceDirectory .. "mcp\\"
+  local serverPath = mcpDirectory .. "server.exe"
+  local configPath = mcpDirectory .. "config.json"
+  if not fileExists(serverPath) then
+    log("mcp\\server.exe is not installed; bridge remains available for stdio clients")
+    return
+  end
+  if not fileExists(configPath) then
+    log("mcp\\config.json is not installed; automatic HTTP server was not started")
+    return
+  end
+  local parameters = string.format(
+    '--config "%s" --ce-pid %d', configPath, getCheatEngineProcessID()
+  )
+  local launched, result = pcall(shellExecute, serverPath, parameters, mcpDirectory, 0)
+  if not launched or result == false then
+    log("automatic MCP server launch failed: " .. tostring(result))
+    return
+  end
+  log("automatic MCP server launch requested")
+end
+
 function StartCEMCPBridge()
   StopCEMCPBridge()
   refreshTarget(true)
   state.running = true
   state.worker = createThread(worker)
   log("listening on " .. PIPE_NAME)
+  startMCPServer()
 end
 
 StartCEMCPBridge()

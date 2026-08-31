@@ -170,6 +170,18 @@ class LuaBridgeTests(unittest.TestCase):
         self.assertIn("getCheatEngineProcessID()", source)
         self.assertIn('PIPE_NAME:match("^[A-Za-z0-9_.-]+$")', source)
 
+    def test_autorun_launches_only_the_installed_http_sidecar_layout(self) -> None:
+        source = BRIDGE.read_text(encoding="utf-8")
+        launch = source[source.index("local function startMCPServer"):source.index("function StartCEMCPBridge")]
+        self.assertIn('getCheatEngineDir()', launch)
+        self.assertIn('"mcp\\\\"', launch)
+        self.assertIn('"server.exe"', launch)
+        self.assertIn('"config.json"', launch)
+        self.assertIn("getCheatEngineProcessID()", launch)
+        self.assertIn("pcall(shellExecute", launch)
+        self.assertNotIn("CE_MCP_TOKEN", launch)
+        self.assertLess(source.index("state.worker = createThread(worker)"), source.index("startMCPServer()", source.index("function StartCEMCPBridge")))
+
     def test_refine_preserves_attached_results_until_next_scan_finishes(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")
         start = source.index('handlers["scan.refine"]')

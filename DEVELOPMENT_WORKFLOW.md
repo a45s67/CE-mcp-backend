@@ -148,3 +148,16 @@ interpreting dependency-related skips, use `uv run --locked`, print
 `sys.executable`, and test the import in that same interpreter. Do not report an
 SDK as missing merely because a global launcher lacks it. Falling back from an
 unusable WindowsApps alias to `py` is not an environment diagnosis.
+
+## 8. Hosted CI and standalone release gate
+
+Hosted CI stops after offline and compiled scripted verification. It uses the
+pinned `windows-2022` image, never starts Cheat Engine, never attaches to a real
+target, and never initializes DBK or DBVM. The standalone job builds once, runs
+both compiled MCP transports, verifies the exact checksum manifest, and uploads
+the pre-zipped artifact.
+
+Nuitka is pinned in the uv build dependency group. Validate standalone mode
+before considering onefile; onefile is not accepted merely because it compiles.
+It must separately preserve startup time, data files, stdio, HTTP, shutdown, and
+security behavior.

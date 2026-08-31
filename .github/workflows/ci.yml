@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Sync locked environment
+        run: uv sync --locked --group build
+      - name: Run offline unit and scripted tests
+        run: uv run --locked python -m unittest discover -s tests -v
+      - name: Build Python distributions
+        run: uv build --no-sources
+      - name: Build standalone Windows release
+        shell: powershell
+        run: .\scripts\build-standalone.ps1
+      - name: Verify release manifest
+        run: uv run --locked python .\scripts\verify-release.py .\dist\ce-mcp-windows-x64
+      - name: Verify isolated installation and upgrade
+        shell: powershell
+        run: .\scripts\verify-installer.ps1
+      - name: Verify compiled MCP transports
+        run: uv run --locked python .\scripts\verify-compiled.py --server .\dist\ce-mcp-windows-x64\mcp\server.exe
+      - name: Upload standalone release
+        uses: actions/upload-artifact@v7
+        with:
+          name: ce-mcp-windows-x64
+          path: dist/ce-mcp-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14

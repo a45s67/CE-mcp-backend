@@ -6,14 +6,22 @@ arbitrary Lua evaluation.
 
 ## Installation and lifecycle
 
-Use `ce-mcp-install-bridge --ce-dir <directory>` to install the bridge as
-`autorun\ce_mcp_bridge.lua`, then restart Cheat Engine. For development it can
-also be loaded from the Lua Engine with `dofile`.
+The Windows release installer writes the bridge as
+`autorun\ce_mcp_bridge.lua` and the compiled runtime under `mcp\`, then Cheat
+Engine must be restarted. For development the bridge can still be installed by
+`ce-mcp-install-bridge --ce-dir <directory>` or loaded from the Lua Engine with
+`dofile`; when `mcp\server.exe` and `mcp\config.json` are absent it keeps the
+pipe available for a manually started development sidecar.
 
 The bridge creates `\\.\pipe\CE_MCP_Backend_v1_<CE_PID>`. Normal users set no
 pipe environment variable. The sidecar discovers one CE instance or requires
 an explicit `--ce-pid` when several are running, then verifies the pipe server
 PID. `CE_MCP_PIPE_NAME` exists only as an integration-test override.
+
+When the compiled layout is installed, the bridge starts exactly
+`<CE>\mcp\server.exe --config <CE>\mcp\config.json --ce-pid <CE_PID>` once.
+The HTTP credential is never placed in that command line. The server monitors
+the explicit CE PID and exits when CE closes.
 
 Reloading stops the previous bridge. Disconnect, detach, target replacement,
 and CE shutdown clean generation-owned scans, signatures, breakpoints, and

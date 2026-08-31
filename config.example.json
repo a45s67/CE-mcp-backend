@@ -1,0 +1,8 @@
+{
+  "transport": "streamable-http",
+  "host": "127.0.0.1",
+  "port": 8001,
+  "tokenFile": "http.token",
+  "requestDeadlineMs": 5000,
+  "exitWhenCeExits": true
+}

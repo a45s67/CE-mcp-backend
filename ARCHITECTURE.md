@@ -3,13 +3,13 @@
 ## Components and trust boundaries
 
 ```text
-MCP client
-    | stdio, or authenticated localhost HTTP
-Python sidecar
-    | framed JSON over a local PID-specific named pipe
-Cheat Engine autorun Lua bridge
-    | verified CE Lua APIs
-Explicitly attached Windows target
+MCP client -- authenticated localhost Streamable HTTP --> compiled sidecar
+                                                               |
+Cheat Engine -- owns sidecar lifetime --> PID-specific named pipe
+      |                                                        |
+      +---------------- autorun Lua bridge <--------------------+
+                               |
+                    explicitly attached Windows target
 ```
 
 The Python sidecar owns MCP schemas, validation, capability policy, session
@@ -19,14 +19,20 @@ offers a generic command or Lua escape hatch.
 
 ## Transport
 
-Stdio is the normal MCP transport. Optional Streamable HTTP is stateless,
-returns JSON responses, is restricted to localhost, and requires a backend-only
-Bearer token on every MCP request. An unauthenticated liveness endpoint reports
+The installed runtime uses stateless Streamable HTTP, returns JSON responses,
+is restricted to localhost, and requires a backend-only Bearer token on every
+MCP request. Stdio remains available for development and protocol diagnostics.
+An unauthenticated liveness endpoint reports
 only that the event loop is serving; authenticated readiness calls the same
 `ce.status` service boundary and reports a bounded diagnostic without target or
 credential data. The sidecar accepts only local CE named pipes, discovers a
 single CE instance by default, and verifies that the pipe server PID matches the
 selected CE process.
+
+The autorun bridge launches only `<CE>\mcp\server.exe`, supplies a strict local
+config path and the current CE PID, and never puts the HTTP token in process
+arguments. The sidecar monitors that explicit CE identity and exits when its CE
+owner terminates. Configuration is strict JSON; unknown fields fail startup.
 
 Bridge messages are length-prefixed UTF-8 JSON with a bounded frame size,
 request correlation, deadlines, and strict schemas. A disconnected connection

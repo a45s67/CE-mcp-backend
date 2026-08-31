@@ -1,162 +1,147 @@
 # CE MCP Backend
 
-Structured Cheat Engine 7.7 dynamic analysis through MCP. The backend exposes
-bounded tools for explicitly authorized Windows processes; it does not expose
-arbitrary Lua, shell commands, injection, or memory writes.
+Standalone, structured Cheat Engine 7.7 dynamic analysis through MCP. The
+backend exposes bounded tools for explicitly authorized Windows processes; it
+does not expose arbitrary Lua, shell commands, injection, or memory writes.
 
-Current tool behavior is documented in [CE_MCP_TOOLS.md](CE_MCP_TOOLS.md).
-Implementation boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md), and the
-evidence-first maintenance rules are in
-[DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md).
+The Windows release does not require Python, uv, a Codex plugin, or a skill.
+Tool behavior is documented by MCP itself and in
+[CE_MCP_TOOLS.md](CE_MCP_TOOLS.md). Trust boundaries are described in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Install
+## Install the Windows release
 
-Prerequisites: Windows, Cheat Engine 7.7, Python 3.10 or newer, and `uv` on
-`PATH`.
-
-Install the Lua bridge once, then restart Cheat Engine:
+Prerequisites: 64-bit Windows and Cheat Engine 7.7. Extract
+`ce-mcp-windows-x64.zip`, close every Cheat Engine instance, and run:
 
 ```powershell
-uv sync --locked
-uv run --locked ce-mcp-install-bridge --ce-dir "C:\tools\Cheat Engine"
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\install.ps1 `
+  -CheatEngineDir "C:\tools\Cheat Engine"
 ```
 
-The installer writes only `autorun\ce_mcp_bridge.lua` and refuses to replace
-an existing file unless `--replace` is supplied. Normal stdio use needs no pipe
-environment variable, policy file, DBK, or DBVM.
+The resulting installation is:
 
-### Codex plugin
+```text
+Cheat Engine/
+|-- autorun/
+|   `-- ce_mcp_bridge.lua
+`-- mcp/
+    |-- server.exe
+    |-- config.json
+    |-- http.token
+    `-- standalone runtime files
+```
+
+The first install generates a random 48-byte HTTP token and restricts its ACL
+to the installing Windows user. Normal upgrades preserve `config.json` and
+`http.token`. Use `-RotateToken` only when every registered client will also be
+updated.
+
+Restart Cheat Engine after installation. Its autorun bridge creates a
+PID-specific local named pipe and starts `mcp\server.exe` once with the exact CE
+PID and `mcp\config.json`. Closing CE causes its owned HTTP server to exit.
+
+## Connect an MCP client
+
+The default endpoint is `http://127.0.0.1:8001/mcp`. Every MCP request requires
+the Bearer token. For Codex, copy the installed token into the user environment
+and register the plain MCP endpoint:
 
 ```powershell
-codex plugin marketplace add a45s67/codex-marketplace
-codex plugin add ce-mcp-backend@a45s67
+$tokenPath = "C:\tools\Cheat Engine\mcp\http.token"
+$token = [IO.File]::ReadAllText($tokenPath).Trim()
+[Environment]::SetEnvironmentVariable("CE_MCP_TOKEN", $token, "User")
+
+codex mcp add cheat-engine `
+  --url http://127.0.0.1:8001/mcp `
+  --bearer-token-env-var CE_MCP_TOKEN
 ```
 
-To refresh an installed development release:
+Restart Codex after changing its user environment. The command stores the
+environment-variable name, not the secret value. Other Streamable HTTP MCP
+clients should use the same URL and `Authorization: Bearer <token>` header.
 
-```powershell
-codex plugin marketplace upgrade
-codex plugin remove ce-mcp-backend@a45s67
-codex plugin add ce-mcp-backend@a45s67
-```
+The server itself resolves authentication in this order:
 
-Codex runs `uv run --locked ce-mcp-backend --transport stdio` from the plugin
-root, so users do not configure a machine-specific virtual-environment path or
-MCP JSON. The first startup creates the plugin environment and can take longer.
+1. `CE_MCP_TOKEN`, when inherited by the server process.
+2. `tokenFile` from `config.json`, resolved relative to that config file.
+3. Refuse HTTP startup when neither source is available.
 
-Installing the plugin does not install or start the CE Lua bridge. Cheat Engine
-must be running after the bridge installation.
+This lets CE's automatic launch use `http.token`, while controlled deployments
+can override it through the environment without putting a secret in process
+arguments.
 
-### Other MCP clients
+## Configuration and health
 
-Use the executable from the project environment:
+Installed `mcp\config.json` defaults to:
 
 ```json
 {
-  "command": "C:\\path\\to\\CE-mcp-backend\\.venv\\Scripts\\ce-mcp-backend.exe",
-  "args": ["--transport", "stdio"]
+  "transport": "streamable-http",
+  "host": "127.0.0.1",
+  "port": 8001,
+  "tokenFile": "http.token",
+  "requestDeadlineMs": 5000,
+  "exitWhenCeExits": true
 }
 ```
 
-## Use
-
-The normal sequence is:
-
-1. Call `ce.status`.
-2. List processes and attach by explicit PID with `ce.process`.
-3. Preserve the returned session generation for target-bound calls.
-4. Close operation handles and remove breakpoints when finished.
-5. Detach with `ce.process`.
-
-If multiple Cheat Engine instances are running, configure `--ce-pid <pid>`;
-automatic discovery intentionally refuses to guess. Never retry an
-`OUTCOME_UNKNOWN` mutation. Reconcile state with `ce.status` or the relevant
-read-only list/status call.
-
-The default `debug` profile enables the supported non-DBVM tools. An optional
-read-only deployment can pass a local JSON file containing
-`{"profile":"inspect"}` through `--policy-config`. DBK/DBVM support is deferred,
-disabled by default, and never initialized by this project; see [TODO.md](TODO.md).
-
-### Streamable HTTP
-
-Stdio remains the Codex plugin default. For a direct MCP client or local gateway,
-start the same backend as an authenticated, stateless Streamable HTTP server:
-
-```powershell
-$tokenPath = Join-Path $env:LOCALAPPDATA "CE-MCP\http.token"
-New-Item -ItemType Directory -Force (Split-Path $tokenPath) | Out-Null
-$token = [Convert]::ToBase64String(
-  [Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
-)
-[IO.File]::WriteAllText($tokenPath, $token)
-
-uv run --locked ce-mcp-backend `
-  --transport streamable-http `
-  --host 127.0.0.1 `
-  --port 8001 `
-  --token-file $tokenPath
-```
-
-For service deployments, set `CE_MCP_TOKEN` instead of passing `--token-file`.
-The environment variable takes precedence when both sources are present.
-
-Configure the client with endpoint `http://127.0.0.1:8001/mcp` and header
-`Authorization: Bearer <the token>`. The backend implements stateless
-Streamable HTTP with JSON responses. Every MCP request requires the token.
-
-Health checks are separate from MCP:
+Only `127.0.0.1`, `::1`, and `localhost` are accepted. Do not publish this
+plaintext endpoint to a LAN or the internet.
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8001/health/live
-$headers = @{ Authorization = "Bearer $token" }
+$headers = @{ Authorization = "Bearer $env:CE_MCP_TOKEN" }
 Invoke-RestMethod http://127.0.0.1:8001/health/ready -Headers $headers
 ```
 
-`/health/live` only proves that the HTTP server is running. Authenticated
-`/health/ready` returns HTTP 200 when the CE bridge answers `ce.status`, or HTTP
-503 with a bounded `diagnostic_code` when it cannot. The token must contain at
-least 32 characters. Only its file path is accepted as server configuration;
-the secret is not read from an environment variable or accepted on the command
-line.
+Liveness only proves that HTTP is serving. Authenticated readiness returns 200
+when the CE bridge answers `ce.status`, or 503 with a bounded diagnostic code.
 
-Only loopback hosts (`127.0.0.1`, `::1`, or `localhost`) are accepted. Do not
-publish this plaintext HTTP endpoint to a LAN or the internet; use a trusted
-local gateway if remote access is required.
+## Use
 
-## Recovery and uninstall
+The MCP server instructions tell clients to begin with `ce.status`, explicitly
+attach using `ce.process`, preserve session and debugger stop generations, and
+clean up owned operations and breakpoints. Never retry an `OUTCOME_UNKNOWN`
+mutation. DBK and DBVM are deferred, disabled by default, and never initialized
+by this project; see [TODO.md](TODO.md).
 
-- If the bridge is unavailable, restart CE and confirm exactly one CE instance
-  is running, or select it with `--ce-pid`.
-- Closing the MCP session cleans debugger and operation resources owned by that
-  connection.
-- Emergency bridge stop inside CE is `StopCEMCPBridge()` in the Lua Engine.
-- To uninstall, close the MCP client, remove only
-  `<Cheat Engine>\autorun\ce_mcp_bridge.lua`, and restart CE.
+If multiple CE instances are needed, each requires a distinct HTTP port. The
+first release deliberately uses one configured endpoint and fails on a port
+collision instead of silently selecting another port.
 
-## Development
+## Source development
 
-Create the locked environment and run the ordinary suite:
+Python 3.10 or newer and uv are required only for development:
 
 ```powershell
-uv sync --locked
+uv sync --locked --group build
 uv run --locked python -m unittest discover -s tests -v
 ```
 
-Validate the official MCP stdio path against a controlled target:
+Build and verify the same Windows artifact used by CI:
 
 ```powershell
-uv run --locked ce-mcp-live-smoke --target-pid <controlled-pid>
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\build-standalone.ps1
+
+uv run --locked python .\scripts\verify-release.py `
+  .\dist\ce-mcp-windows-x64
+
+uv run --locked python .\scripts\verify-compiled.py `
+  --server .\dist\ce-mcp-windows-x64\mcp\server.exe
 ```
 
-Use `--ce-pid <pid>` only when multiple CE instances are open. Additional live
-gates are exposed as `ce-mcp-*-smoke` commands in `pyproject.toml`. Probe source
-and retained real-CE evidence live under [bridge/probes](bridge/probes/README.md).
+The compiled verifier exercises `--help`, stdio MCP, Streamable HTTP, both
+authentication paths, health, initialization, tool listing, missing-bridge
+errors, and bounded shutdown without launching Cheat Engine. Controlled real-CE
+smoke commands remain local release evidence and are not run on hosted CI.
 
 Repository layout:
 
-- `bridge/`: the autorun Lua bridge and standalone lifecycle probes.
-- `ce_mcp/`: MCP server, policy, state, transport, artifacts, and schemas.
-- `ce_mcp/contracts/v1/tools/`: authoritative public tool contracts.
-- `skills/`: Codex guidance for safe tool use.
-- `tests/`: offline contracts, invariants, integration tests, and live fixtures.
+- `bridge/`: CE autorun Lua bridge and real-CE probes.
+- `ce_mcp/`: server, policy, transport, artifacts, and schemas.
+- `ce_mcp/contracts/v1/tools/`: authoritative public MCP tool contracts.
+- `scripts/`: standalone build, installer, and offline verification gates.
+- `tests/`: unit, contract, and scripted integration tests.

@@ -74,8 +74,15 @@ def create_mcp_server(service: BackendService) -> Server:
         title="Cheat Engine MCP Backend",
         description="Safe, structured Cheat Engine dynamic-analysis tools",
         instructions=(
-            "Attach explicitly before target tools. Treat session generation as stale "
-            "after detach, exit, or reconnect. Do not retry OUTCOME_UNKNOWN mutations."
+            "Begin with ce.status, then use ce.process to list and explicitly attach to an "
+            "authorized target. Preserve the returned session generation for target-bound "
+            "calls and the latest debugger stop generation for register, resume, and step "
+            "calls. Treat both generations as stale after detach, target exit, or bridge "
+            "reconnect. Close scan/signature operations, remove owned breakpoints, and detach "
+            "during cleanup. Never retry an OUTCOME_UNKNOWN mutation; reconcile with ce.status "
+            "or the relevant read-only status/list action. DBK and DBVM are never initialized "
+            "by this server and their tools remain unavailable unless the user configured and "
+            "enabled the separate hypervisor policy explicitly."
         ),
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,

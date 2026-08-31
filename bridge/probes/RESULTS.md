@@ -1,6 +1,6 @@
 # Probe results
 
-## 2026-08-31 — Published Codex plugin live matrix on CE 7.7
+## 2026-08-31 — Published MCP tool live matrix on CE 7.7
 
 - Installed `ce-mcp-backend@a45s67` was exercised through its exposed MCP tools
   against disposable x64 Python and Notepad targets; no arbitrary Lua or target

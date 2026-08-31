@@ -39,4 +39,9 @@ ce_mcp = ["contracts/**/*.json"]
   "bridge/ce_mcp_bridge.lua",
   "bridge/00_ce_mcp_policy.example.lua",
 ]
-"share/ce-mcp-backend" = ["policy.example.json"]
+"share/ce-mcp-backend" = ["policy.example.json", "config.example.json"]
+
+[dependency-groups]
+build = [
+    "nuitka==4.2",
+]
