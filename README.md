@@ -98,6 +98,9 @@ uv run --locked ce-mcp-backend `
   --token-file $tokenPath
 ```
 
+For service deployments, set `CE_MCP_TOKEN` instead of passing `--token-file`.
+The environment variable takes precedence when both sources are present.
+
 Configure the client with endpoint `http://127.0.0.1:8001/mcp` and header
 `Authorization: Bearer <the token>`. The backend implements stateless
 Streamable HTTP with JSON responses. Every MCP request requires the token.

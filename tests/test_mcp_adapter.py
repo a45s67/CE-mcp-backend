@@ -164,7 +164,10 @@ class McpAdapterTests(unittest.TestCase):
             token_file.write_text(token + "\n", encoding="utf-8")
             self.assertEqual(load_http_token(token_file), token)
         with patch.dict(os.environ, {"CE_MCP_TOKEN": "b" * 32}):
-            with self.assertRaisesRegex(ValueError, "--token-file is required"):
+            self.assertEqual(load_http_token(None), "b" * 32)
+            self.assertEqual(load_http_token(token_file), "b" * 32)
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "CE_MCP_TOKEN or --token-file is required"):
                 load_http_token(None)
 
 

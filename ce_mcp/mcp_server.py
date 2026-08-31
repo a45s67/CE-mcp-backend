@@ -182,14 +182,18 @@ def run_http(service: BackendService, host: str, port: int, token: str) -> None:
 
 
 def load_http_token(token_file: Path | None) -> str:
-    if token_file is None:
-        raise ValueError("--token-file is required for Streamable HTTP")
-    try:
-        token = token_file.read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        raise ValueError(f"cannot read HTTP token file: {exc}") from exc
+    token = os.environ.get("CE_MCP_TOKEN")
+    source = "CE_MCP_TOKEN"
+    if token is None:
+        if token_file is None:
+            raise ValueError("CE_MCP_TOKEN or --token-file is required for Streamable HTTP")
+        source = "--token-file"
+        try:
+            token = token_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ValueError(f"cannot read HTTP token file: {exc}") from exc
     if not token:
-        raise ValueError("--token-file must provide a Streamable HTTP bearer token")
+        raise ValueError(f"{source} must provide a Streamable HTTP bearer token")
     if "\n" in token or "\r" in token:
         raise ValueError("Streamable HTTP bearer token must be a single line")
     return token
