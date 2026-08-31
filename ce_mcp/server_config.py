@@ -7,6 +7,10 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
+MIN_MAX_OUTPUT_BYTES = 4 * 1024
+HARD_MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ServerConfig:
@@ -16,6 +20,7 @@ class ServerConfig:
     token_file: Path | None = None
     request_deadline_ms: int = 5_000
     exit_when_ce_exits: bool = False
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES
 
     @classmethod
     def load(cls, path: Path | None) -> "ServerConfig":
@@ -30,6 +35,7 @@ class ServerConfig:
         allowed = {
             "transport", "host", "port", "tokenFile", "requestDeadlineMs",
             "exitWhenCeExits",
+            "maxOutputBytes",
         }
         extra = set(value).difference(allowed)
         if extra:
@@ -39,6 +45,7 @@ class ServerConfig:
         port = value.get("port", 8001)
         deadline = value.get("requestDeadlineMs", 5_000)
         exit_when_ce_exits = value.get("exitWhenCeExits", False)
+        max_output_bytes = value.get("maxOutputBytes", DEFAULT_MAX_OUTPUT_BYTES)
         token_value = value.get("tokenFile")
         if transport not in {"stdio", "streamable-http"}:
             raise ValueError("transport must be stdio or streamable-http")
@@ -53,6 +60,14 @@ class ServerConfig:
             raise ValueError("requestDeadlineMs must be between 1 and 300000")
         if not isinstance(exit_when_ce_exits, bool):
             raise ValueError("exitWhenCeExits must be a boolean")
+        if (
+            not isinstance(max_output_bytes, int) or isinstance(max_output_bytes, bool)
+            or not MIN_MAX_OUTPUT_BYTES <= max_output_bytes <= HARD_MAX_OUTPUT_BYTES
+        ):
+            raise ValueError(
+                f"maxOutputBytes must be between {MIN_MAX_OUTPUT_BYTES} and "
+                f"{HARD_MAX_OUTPUT_BYTES}"
+            )
         if token_value is not None and (not isinstance(token_value, str) or not token_value):
             raise ValueError("tokenFile must be a non-empty string")
         token_file = None
@@ -67,4 +82,5 @@ class ServerConfig:
             token_file=token_file,
             request_deadline_ms=deadline,
             exit_when_ce_exits=exit_when_ce_exits,
+            max_output_bytes=max_output_bytes,
         )

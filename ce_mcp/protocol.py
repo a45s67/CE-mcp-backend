@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Mapping
 
-from .models import ContractViolation, ErrorDetail
+from .models import ContractViolation, ErrorDetail, NextAction
 
 
 PROTOCOL_VERSION = 1
@@ -127,6 +127,19 @@ class BridgeResponse:
                     current_state=error_value.get("currentState"),
                     suggested_action=error_value.get("suggestedAction"),
                     details=error_value.get("details"),
+                    advice_source=error_value.get("adviceSource"),
+                    next_actions=tuple(
+                        NextAction(
+                            code=item["code"],
+                            execution=item["execution"],
+                            reason=item["reason"],
+                            tool=item.get("tool"),
+                            arguments=item.get("arguments"),
+                            arguments_patch=item.get("argumentsPatch"),
+                            preserve_arguments=tuple(item.get("preserveArguments", ())),
+                        )
+                        for item in error_value.get("nextActions", ())
+                    ),
                 )
             except (KeyError, TypeError) as exc:
                 raise ContractViolation("invalid response error") from exc

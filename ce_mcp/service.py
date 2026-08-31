@@ -18,11 +18,16 @@ from uuid import uuid4
 from .artifacts import ArtifactStore, ArtifactStoreError
 from .audit import AuditLogError
 from .catalog import load_catalog
-from .models import ContractViolation, ErrorDetail, Session
+from .models import ContractViolation, ErrorDetail, NextAction, Session
 from .protocol import BridgeRequest, BridgeResponse, BridgeTransportError
 from .policy import Policy
 from .schema import validate
 from .structures import StructureWorkspace, StructureWorkspaceError
+from .server_config import (
+    DEFAULT_MAX_OUTPUT_BYTES,
+    HARD_MAX_OUTPUT_BYTES,
+    MIN_MAX_OUTPUT_BYTES,
+)
 
 
 class BridgeClient(Protocol):
@@ -141,6 +146,7 @@ class BackendService:
         *,
         backend_version: str = "0.0.1",
         request_deadline_ms: int = 5_000,
+        max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
         artifact_store: ArtifactStore | None = None,
         structure_workspace: StructureWorkspace | None = None,
         policy: Policy | None = None,
@@ -153,6 +159,12 @@ class BackendService:
         if not 1 <= request_deadline_ms <= 300_000:
             raise ValueError("request_deadline_ms must be between 1 and 300000")
         self._request_deadline_ms = request_deadline_ms
+        if not MIN_MAX_OUTPUT_BYTES <= max_output_bytes <= HARD_MAX_OUTPUT_BYTES:
+            raise ValueError(
+                f"max_output_bytes must be between {MIN_MAX_OUTPUT_BYTES} and "
+                f"{HARD_MAX_OUTPUT_BYTES}"
+            )
+        self._max_output_bytes = max_output_bytes
         self._artifact_store = artifact_store
         self._structure_workspace = structure_workspace or StructureWorkspace()
         self._policy = policy or Policy()
@@ -167,6 +179,37 @@ class BackendService:
     @property
     def session(self) -> Session | None:
         return self._session
+
+    @property
+    def max_output_bytes(self) -> int:
+        return self._max_output_bytes
+
+    def is_mutation(self, name: str, arguments: Mapping[str, Any]) -> bool:
+        action = arguments.get("action")
+        return isinstance(action, str) and action in self._MUTATING_ACTIONS.get(name, set())
+
+    def validate_next_action(
+        self,
+        action: NextAction,
+        *,
+        current_tool: str,
+        current_arguments: Mapping[str, Any],
+    ) -> None:
+        if action.tool is None:
+            return
+        definition = self._tools.get(action.tool)
+        if definition is None:
+            raise ContractViolation("next action references an unknown tool")
+        if action.arguments is not None:
+            candidate = dict(action.arguments)
+        elif action.arguments_patch is not None:
+            if action.tool != current_tool:
+                raise ContractViolation("argument patches may only target the current tool")
+            candidate = dict(current_arguments)
+            candidate.update(action.arguments_patch)
+        else:
+            candidate = {}
+        validate(definition["inputSchema"], candidate)
 
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> ToolOutcome:
         # State preflight, bridge execution, output validation, and session update
@@ -279,6 +322,12 @@ class BackendService:
                 "CE accepted the process mutation but its final state was not observed",
                 recoverable=True,
                 safe_to_retry=False,
+                suggested_action="Call ce.status and reconcile target state before another mutation.",
+                next_actions=(NextAction(
+                    "REFRESH_STATUS", "required_before_retry",
+                    "Observe current target state without repeating the mutation.",
+                    tool="ce.status", arguments={},
+                ),),
             )
         try:
             result = self._normalize(name, arguments, response.result)
@@ -442,6 +491,11 @@ class BackendService:
                     safe_to_retry=name != "ce.process",
                     current_state=self._session.state.value,
                     suggested_action="Call ce.status and re-resolve target addresses",
+                    next_actions=(NextAction(
+                        "REFRESH_STATUS", "required_before_retry",
+                        "Obtain the current session generation before continuing.",
+                        tool="ce.status", arguments={},
+                    ),),
                     details={
                         "expectedGeneration": expected,
                         "actualGeneration": self._session.generation,
@@ -471,6 +525,7 @@ class BackendService:
                 enabled = list(normalized_capabilities.get("enabled", []))
                 disabled = dict(normalized_capabilities.get("disabledReasons", {}))
                 limits = dict(normalized_capabilities.get("limits", {}))
+                limits["maxOutputBytes"] = self._max_output_bytes
                 for capability in ("artifacts.memory_dump", "artifacts.metadata", "artifacts.preview"):
                     if capability not in available:
                         available.append(capability)
@@ -685,12 +740,23 @@ class BackendService:
                 "Bridge disconnected before the mutation outcome was observed",
                 recoverable=True,
                 safe_to_retry=False,
+                suggested_action="Call ce.status and reconcile state before another mutation.",
+                next_actions=(NextAction(
+                    "REFRESH_STATUS", "required_before_retry",
+                    "Observe current state without repeating the mutation.",
+                    tool="ce.status", arguments={},
+                ),),
             )
         return self._error(
             "BRIDGE_UNAVAILABLE",
             "Cheat Engine bridge is unavailable",
             recoverable=True,
             safe_to_retry=True,
+            suggested_action="Confirm Cheat Engine is running and its autorun bridge loaded.",
+            next_actions=(NextAction(
+                "CHECK_CE_BRIDGE", "manual",
+                "Confirm Cheat Engine and the local autorun bridge are available.",
+            ),),
         )
 
     def _reconcile_process_mutation(
@@ -752,6 +818,8 @@ class BackendService:
         *,
         recoverable: bool,
         safe_to_retry: bool,
+        suggested_action: str | None = None,
+        next_actions: tuple[NextAction, ...] = (),
     ) -> ToolOutcome:
         return ToolOutcome(
             error=ErrorDetail(
@@ -759,5 +827,7 @@ class BackendService:
                 message=message,
                 recoverable=recoverable,
                 safe_to_retry=safe_to_retry,
+                suggested_action=suggested_action,
+                next_actions=next_actions,
             )
         )

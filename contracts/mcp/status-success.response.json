@@ -1,0 +1,39 @@
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "result": {
+    "content": [
+      {
+        "text": "ce.status completed: bridgeConnected=true.",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "backend": {
+        "version": "0.0.1",
+        "protocolVersion": 1
+      },
+      "bridge": {
+        "connected": true,
+        "version": "0.1.0"
+      },
+      "capabilities": {
+        "available": [
+          "artifacts.memory_dump",
+          "artifacts.metadata",
+          "artifacts.preview"
+        ],
+        "enabled": [],
+        "disabledReasons": {
+          "artifacts.memory_dump": "artifact store is not configured",
+          "artifacts.metadata": "artifact store is not configured",
+          "artifacts.preview": "artifact store is not configured"
+        },
+        "limits": {
+          "maxOutputBytes": 1048576
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,8 @@ import unittest
 from ce_mcp.models import (
     Address,
     ContractViolation,
+    ErrorDetail,
+    NextAction,
     Session,
     SessionState,
     require_expected_generation,
@@ -54,6 +56,37 @@ class SessionTests(unittest.TestCase):
     def test_architecture_and_pointer_width_must_match(self) -> None:
         with self.assertRaises(ContractViolation):
             Session("ce-01jabcdef", 1, SessionState.RUNNING, 1, "x86", 64)
+
+
+class ErrorAdviceTests(unittest.TestCase):
+    def test_advice_is_bounded_attributed_and_machine_readable(self) -> None:
+        error = ErrorDetail(
+            code="STALE_SESSION",
+            message="Session is stale",
+            recoverable=True,
+            safe_to_retry=False,
+            suggested_action="Refresh status before continuing.",
+            next_actions=(
+                NextAction(
+                    code="REFRESH_STATUS",
+                    execution="required_before_retry",
+                    reason="Obtain the current session generation.",
+                    tool="ce.status",
+                    arguments={},
+                ),
+            ),
+        ).to_dict()
+        self.assertEqual(error["adviceSource"], "ce-mcp-backend")
+        self.assertEqual(error["nextActions"][0]["tool"], "ce.status")
+
+    def test_invalid_advice_is_rejected(self) -> None:
+        with self.assertRaises(ContractViolation):
+            NextAction("bad", "automatic", "guess", tool="ce.status")
+        with self.assertRaises(ContractViolation):
+            ErrorDetail(
+                "BAD_ERROR", "bad", True, False,
+                advice_source="cheat-engine",
+            )
 
 
 if __name__ == "__main__":

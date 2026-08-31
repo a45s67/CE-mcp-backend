@@ -4,7 +4,7 @@ import unittest
 
 from ce_mcp.fake_bridge import FakeBridge
 from ce_mcp.framing import decode_frame, encode_frame, read_frame, write_frame
-from ce_mcp.models import ContractViolation, ErrorDetail
+from ce_mcp.models import ContractViolation, ErrorDetail, NextAction
 from ce_mcp.protocol import BridgeRequest, BridgeResponse
 
 
@@ -65,6 +65,19 @@ class EnvelopeTests(unittest.TestCase):
     def test_response_round_trip(self) -> None:
         response = BridgeResponse("req-00000001", result={"ok": True})
         self.assertEqual(BridgeResponse.from_dict(response.to_dict()), response)
+
+        advised = BridgeResponse(
+            "req-00000002",
+            error=ErrorDetail(
+                "STALE_SESSION", "Session is stale", True, False,
+                suggested_action="Refresh status.",
+                next_actions=(NextAction(
+                    "REFRESH_STATUS", "required_before_retry",
+                    "Obtain the current generation.", tool="ce.status", arguments={},
+                ),),
+            ),
+        )
+        self.assertEqual(BridgeResponse.from_dict(advised.to_dict()), advised)
 
     def test_response_rejects_unknown_fields(self) -> None:
         with self.assertRaises(ContractViolation):

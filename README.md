@@ -83,12 +83,20 @@ Installed `mcp\config.json` defaults to:
   "port": 8001,
   "tokenFile": "http.token",
   "requestDeadlineMs": 5000,
+  "maxOutputBytes": 1048576,
   "exitWhenCeExits": true
 }
 ```
 
 Only `127.0.0.1`, `::1`, and `localhost` are accepted. Do not publish this
 plaintext endpoint to a LAN or the internet.
+
+`maxOutputBytes` defaults to 1 MiB, accepts 4096 through 4194304 bytes, and
+limits each MCP tool result on both stdio and HTTP. Oversized results are never
+returned as truncated JSON. The server instead returns
+`OUTPUT_LIMIT_EXCEEDED` with measured and configured byte counts. Read-only
+paged calls may receive a smaller `limit` or `count` suggestion; completed
+mutations are never replayed and require state reconciliation.
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8001/health/live
@@ -106,6 +114,13 @@ attach using `ce.process`, preserve session and debugger stop generations, and
 clean up owned operations and breakpoints. Never retry an `OUTCOME_UNKNOWN`
 mutation. DBK and DBVM are deferred, disabled by default, and never initialized
 by this project; see [TODO.md](TODO.md).
+
+Tool `content` is a short human-readable summary. Authoritative data remains in
+`structuredContent`. Error `suggestedAction` and `nextActions` values are
+optional recovery hints authored by this backend—not Cheat Engine or MCP—and
+are never executed by the server. Clients may ignore them. `execution` is one
+of `suggested`, `required_before_retry`, or `manual`; any mutation still
+requires the normal authorization and generation checks.
 
 If multiple CE instances are needed, each requires a distinct HTTP port. The
 first release deliberately uses one configured endpoint and fails on a port

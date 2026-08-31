@@ -27,7 +27,25 @@
             "safeToRetry": {"type": "boolean"},
             "currentState": {"type": "string", "maxLength": 64},
             "suggestedAction": {"type": "string", "maxLength": 512},
-            "details": {"type": "object"}
+            "details": {"type": "object"},
+            "adviceSource": {"const": "ce-mcp-backend"},
+            "nextActions": {
+              "type": "array", "maxItems": 4,
+              "items": {
+                "type": "object",
+                "required": ["code", "execution", "reason"],
+                "properties": {
+                  "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"},
+                  "execution": {"type": "string", "enum": ["suggested", "required_before_retry", "manual"]},
+                  "reason": {"type": "string", "minLength": 1, "maxLength": 256},
+                  "tool": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$"},
+                  "arguments": {"type": "object", "maxProperties": 32},
+                  "argumentsPatch": {"type": "object", "maxProperties": 16},
+                  "preserveArguments": {"type": "array", "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 64}}
+                },
+                "additionalProperties": false
+              }
+            }
           },
           "additionalProperties": false
         }

@@ -38,6 +38,13 @@ Bridge messages are length-prefixed UTF-8 JSON with a bounded frame size,
 request correlation, deadlines, and strict schemas. A disconnected connection
 causes the bridge to clean its debugger and operation resources.
 
+Every MCP tool result is measured as compact UTF-8 JSON at the shared adapter
+used by stdio and HTTP. The configured output ceiling defaults to 1 MiB and has
+a 4 MiB hard maximum. `structuredContent` is authoritative; `content` is only a
+bounded summary. An oversized completed mutation is not repeated: the client
+receives an `OUTPUT_LIMIT_EXCEEDED` reconciliation error with
+`safeToRetry=false`.
+
 ## State
 
 An attach produces a session identity and monotonically changing generation.
@@ -69,6 +76,9 @@ and unrestricted filesystem access.
 - Reads, result pages, operations, structures, and artifacts have hard limits.
 - Transport failures distinguish safe retry from `OUTCOME_UNKNOWN` mutation
   outcomes.
+- Optional `suggestedAction` and `nextActions` recovery hints are explicitly
+  attributed to `ce-mcp-backend`, bounded and schema-validated, and never
+  executed automatically.
 - Audit logs record redacted call metadata, never request arguments, memory
   contents, credentials, or bridge authorization secrets.
 - Default audit and artifact locations are backend-controlled under the local

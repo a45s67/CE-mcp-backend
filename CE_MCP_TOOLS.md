@@ -16,6 +16,10 @@ the current release; it does not describe planned APIs.
 - Keep reads, scans, pages, signatures, and artifacts bounded. Close operation
   handles and remove breakpoints after use.
 - Never retry `OUTCOME_UNKNOWN` mutations automatically.
+- Treat `structuredContent` as authoritative. `content` is a concise summary.
+- Backend-authored `suggestedAction` and `nextActions` are optional hints, not
+  Cheat Engine or MCP directives; never bypass authorization or generation
+  checks when following them.
 
 Addresses are canonical hexadecimal strings. Target pointer width and
 architecture come from the attached session.
@@ -45,6 +49,12 @@ architecture come from the attached session.
 
 Exact required fields, limits, enums, output shapes, and MCP annotations are in
 the corresponding JSON schema. Unsupported fields are rejected.
+
+`ce.status.capabilities.limits.maxOutputBytes` reports the active per-tool-result
+ceiling. If a result exceeds it, `OUTPUT_LIMIT_EXCEEDED.details` includes
+`actualBytes`, `limitBytes`, `tool`, `action`, and outcome. A safe paged read may
+include an `argumentsPatch` with a smaller `limit` or `count`; a mutation never
+does.
 
 ## Capability limits
 

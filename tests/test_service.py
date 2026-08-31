@@ -62,6 +62,10 @@ class ServiceTests(unittest.TestCase):
         assert outcome.result is not None
         self.assertEqual(outcome.result["backend"]["protocolVersion"], 1)
         self.assertEqual(outcome.result["bridge"]["dbvmReadiness"], "not-ready")
+        self.assertEqual(
+            outcome.result["capabilities"]["limits"]["maxOutputBytes"],
+            1048576,
+        )
         self.assertEqual(self.bridge.calls[0].method, "status.get")
 
     def test_status_without_session_invalidates_previously_attached_target(self) -> None:
@@ -154,8 +158,11 @@ class ServiceTests(unittest.TestCase):
         mutation = service.call_tool("ce.process", {"action": "attach", "pid": 4242})
         self.assertEqual(read.error.code, "BRIDGE_UNAVAILABLE")  # type: ignore[union-attr]
         self.assertTrue(read.error.safe_to_retry)  # type: ignore[union-attr]
+        self.assertEqual(read.error.advice_source, "ce-mcp-backend")  # type: ignore[union-attr]
+        self.assertEqual(read.error.next_actions[0].execution, "manual")  # type: ignore[union-attr]
         self.assertEqual(mutation.error.code, "OUTCOME_UNKNOWN")  # type: ignore[union-attr]
         self.assertFalse(mutation.error.safe_to_retry)  # type: ignore[union-attr]
+        self.assertEqual(mutation.error.next_actions[0].tool, "ce.status")  # type: ignore[union-attr]
 
     def test_attach_disconnect_is_reconciled_without_repeating_mutation(self) -> None:
         class RebuildingBridge:

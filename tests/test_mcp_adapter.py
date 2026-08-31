@@ -8,14 +8,17 @@ from unittest.mock import patch
 
 try:
     import mcp.types as types
-    from ce_mcp.mcp_adapter import build_tool_list, create_mcp_server, invoke_tool
+    from ce_mcp.mcp_adapter import (
+        _bounded_result, build_tool_list, create_mcp_server, invoke_tool,
+    )
     from ce_mcp.mcp_server import StaticTokenVerifier, create_http_app, load_http_token
     from mcp.server.lowlevel.server import NotificationOptions
 except ModuleNotFoundError:
     types = None
 
 from ce_mcp.fake_bridge import FakeBridge
-from ce_mcp.service import BackendService
+from ce_mcp.models import ContractViolation, ErrorDetail, NextAction
+from ce_mcp.service import BackendService, ToolOutcome
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,9 +57,56 @@ class McpAdapterTests(unittest.TestCase):
         failure = asyncio.run(invoke_tool(self.service, "ce.unknown", {}))
         self.assertFalse(success.is_error)
         self.assertIn("backend", success.structured_content)
-        self.assertEqual(json.loads(success.content[0].text), success.structured_content)
+        self.assertEqual(success.content[0].text, "ce.status completed: bridgeConnected=true.")
+        self.assertLess(len(success.content[0].text), 256)
         self.assertTrue(failure.is_error)
         self.assertEqual(failure.structured_content["error"]["code"], "METHOD_NOT_FOUND")
+
+    def test_output_limit_returns_actionable_error_for_safe_paged_read(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        result = _bounded_result(
+            service,
+            "ce.process",
+            {"action": "list", "limit": 200, "nameFilter": "sample"},
+            ToolOutcome(result={"items": [{"value": "x" * 512}] * 20}),
+        )
+        self.assertTrue(result.is_error)
+        error = result.structured_content["error"]
+        self.assertEqual(error["code"], "OUTPUT_LIMIT_EXCEEDED")
+        self.assertTrue(error["safeToRetry"])
+        self.assertEqual(error["details"]["limitBytes"], 4096)
+        self.assertGreater(error["details"]["actualBytes"], 4096)
+        self.assertIn("4096-byte limit", error["message"])
+        action = error["nextActions"][0]
+        self.assertEqual(action["tool"], "ce.process")
+        self.assertEqual(action["argumentsPatch"], {"limit": 100})
+        self.assertEqual(action["execution"], "suggested")
+        self.assertEqual(error["adviceSource"], "ce-mcp-backend")
+
+    def test_output_limit_never_recommends_replaying_a_mutation(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        result = _bounded_result(
+            service,
+            "ce.process",
+            {"action": "attach", "pid": 42},
+            ToolOutcome(result={"value": "x" * 5000}),
+        )
+        error = result.structured_content["error"]
+        self.assertFalse(error["safeToRetry"])
+        self.assertEqual(error["details"]["outcome"], "completed_response_not_returned")
+        self.assertEqual(error["nextActions"][0]["tool"], "ce.status")
+        self.assertEqual(error["nextActions"][0]["execution"], "required_before_retry")
+
+    def test_next_action_tool_and_arguments_are_validated_against_catalog(self) -> None:
+        outcome = ToolOutcome(error=ErrorDetail(
+            "TEST_ERROR", "test", True, False,
+            next_actions=(NextAction(
+                "BAD_RECOVERY", "suggested", "Invalid test recovery.",
+                tool="ce.missing", arguments={},
+            ),),
+        ))
+        with self.assertRaisesRegex(ContractViolation, "unknown tool"):
+            _bounded_result(self.service, "ce.status", {}, outcome)
 
     def test_server_advertises_tool_capability(self) -> None:
         server = create_mcp_server(self.service)

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import unittest
 
-from ce_mcp.models import ErrorDetail, ContractViolation
+from ce_mcp.models import ErrorDetail, ContractViolation, NextAction
 from ce_mcp.protocol import BridgeRequest, BridgeResponse
 from ce_mcp.schema import validate
 
@@ -38,6 +38,10 @@ class BridgeSchemaTests(unittest.TestCase):
             safe_to_retry=True,
             current_state="running",
             suggested_action="ce.debug_control(action='pause')",
+            next_actions=(NextAction(
+                "PAUSE_TARGET", "suggested", "Pause before reading registers.",
+                tool="ce.debug_control", arguments={"action": "pause"},
+            ),),
         )
         validate(schema, BridgeResponse("req-00000002", error=error).to_dict())
         validate(load("error.schema.json"), error.to_dict())

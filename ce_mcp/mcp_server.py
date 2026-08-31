@@ -68,6 +68,7 @@ def build_parser(config: ServerConfig | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--pipe", default=DEFAULT_PIPE_NAME)
     parser.add_argument("--ce-pid", type=int, help="select one CE instance when auto-discovery is ambiguous")
     parser.add_argument("--deadline-ms", type=int, default=config.request_deadline_ms)
+    parser.add_argument("--max-output-bytes", type=int, default=config.max_output_bytes)
     parser.add_argument(
         "--exit-when-ce-exits",
         action=argparse.BooleanOptionalAction,
@@ -113,6 +114,7 @@ def create_service(options) -> BackendService:
         WindowsNamedPipeBridgeClient(options.pipe, ce_pid=options.ce_pid),
         options.contracts,
         request_deadline_ms=options.deadline_ms,
+        max_output_bytes=options.max_output_bytes,
         artifact_store=ArtifactStore(
             options.artifact_root,
             max_artifacts=options.max_artifacts,

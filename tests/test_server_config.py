@@ -27,6 +27,7 @@ class ServerConfigTests(unittest.TestCase):
                         "port": 43180,
                         "tokenFile": "http.token",
                         "requestDeadlineMs": 7000,
+                        "maxOutputBytes": 65536,
                         "exitWhenCeExits": True,
                     }
                 ),
@@ -38,6 +39,7 @@ class ServerConfigTests(unittest.TestCase):
             self.assertEqual(options.transport, "streamable-http")
             self.assertEqual(options.port, 43180)
             self.assertEqual(options.deadline_ms, 7000)
+            self.assertEqual(options.max_output_bytes, 65536)
             self.assertTrue(options.exit_when_ce_exits)
 
     def test_cli_overrides_non_secret_config_values(self) -> None:
@@ -56,7 +58,10 @@ class ServerConfigTests(unittest.TestCase):
     def test_unknown_or_invalid_config_is_rejected(self) -> None:
         with TemporaryDirectory(dir=ROOT) as directory:
             path = Path(directory) / "config.json"
-            for value in ({"unknown": True}, {"port": 0}, {"exitWhenCeExits": "yes"}):
+            for value in (
+                {"unknown": True}, {"port": 0}, {"exitWhenCeExits": "yes"},
+                {"maxOutputBytes": 4095}, {"maxOutputBytes": 4194305},
+            ):
                 path.write_text(json.dumps(value), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     ServerConfig.load(path)

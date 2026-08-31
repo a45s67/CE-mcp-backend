@@ -23,20 +23,29 @@ jobs:
           enable-cache: true
       - name: Sync locked environment
         run: uv sync --locked --group build
-      - name: Run offline unit and scripted tests
-        id: unit-tests
-        continue-on-error: true
-        shell: powershell
-        run: uv run --locked python -m unittest discover -s tests -v 2>&1 | Tee-Object test-output.txt
-      - name: Report unit test failure
-        if: steps.unit-tests.outcome == 'failure'
-        shell: powershell
-        run: |
-          $diagnostic = Get-Content test-output.txt | Where-Object {
-            $_ -match 'FAIL|ERROR|Traceback|AssertionError'
-          } | Select-Object -First 1
-          Write-Host "::error file=.github/workflows/ci.yml,line=1::$diagnostic"
-          exit 1
+      - name: Test core models and storage
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_artifacts tests.test_audit tests.test_models tests.test_policy
+          tests.test_protocol tests.test_structures
+      - name: Test service and transports
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_service tests.test_transport
+      - name: Test MCP and public contracts
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_mcp_adapter tests.test_mcp_metadata tests.test_mcp_wire_contracts
+          tests.test_schema_contracts tests.test_tool_contracts
+      - name: Test runtime and release scripts
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_install_bridge tests.test_lua_bridge tests.test_mcp_stdio_integration
+          tests.test_release_scripts tests.test_server_config
+      - name: Test scripted smoke workflows
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_cli tests.test_e2e_smoke tests.test_performance_smoke
       - name: Build Python distributions
         run: uv build --no-sources
       - name: Build standalone Windows release

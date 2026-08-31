@@ -62,6 +62,8 @@ async def verify_stdio(server: Path, temporary: Path) -> None:
             status = await session.call_tool("ce.status", {})
             assert status.is_error
             assert status.structured_content["error"]["code"] == "BRIDGE_UNAVAILABLE"
+            assert status.content[0].text.startswith("ce.status failed: BRIDGE_UNAVAILABLE;")
+            assert not status.content[0].text.lstrip().startswith("{")
 
 
 def verify_http_auth_source(
@@ -87,6 +89,7 @@ def verify_http_auth_source(
                 "port": port,
                 "tokenFile": token_file.name,
                 "requestDeadlineMs": 50,
+                "maxOutputBytes": 1048576,
                 "exitWhenCeExits": False,
             }
         ),
@@ -151,6 +154,22 @@ def verify_http_auth_source(
         )
         assert list_status == 200
         assert "ce.status" in {tool["name"] for tool in listed["result"]["tools"]}
+        call_status, called = request_json(
+            base + "/mcp",
+            token=active_token,
+            payload={
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {"name": "ce.status", "arguments": {}},
+            },
+        )
+        assert call_status == 200
+        result = called["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["error"]["code"] == "BRIDGE_UNAVAILABLE"
+        assert result["content"][0]["text"].startswith(
+            "ce.status failed: BRIDGE_UNAVAILABLE;"
+        )
+        assert len(json.dumps(called).encode("utf-8")) < 1048576
     finally:
         process.terminate()
         try:

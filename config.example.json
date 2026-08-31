@@ -4,5 +4,6 @@
   "port": 8001,
   "tokenFile": "http.token",
   "requestDeadlineMs": 5000,
+  "maxOutputBytes": 1048576,
   "exitWhenCeExits": true
 }
