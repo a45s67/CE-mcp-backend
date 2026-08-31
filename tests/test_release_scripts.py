@@ -35,4 +35,7 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn("verify-compiled.py", source)
         self.assertIn("verify-installer.ps1", source)
         self.assertIn("build-standalone.ps1", source)
+        self.assertIn("ce-mcp-windows-x64.zip.sha256", source)
+        self.assertIn("gh release create", source)
+        self.assertIn("tag $env:GITHUB_REF_NAME does not match packaged version", source)
         self.assertNotIn("cheatengine", source.casefold())

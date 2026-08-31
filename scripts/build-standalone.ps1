@@ -9,6 +9,7 @@ $buildRoot = Join-Path $repoRoot "build\nuitka"
 $releaseRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $distRoot = Join-Path $buildRoot "server.dist"
 $zipPath = "$releaseRoot.zip"
+$zipChecksumPath = "$zipPath.sha256"
 
 function Remove-OwnedPath([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
@@ -24,6 +25,9 @@ Remove-OwnedPath $buildRoot
 Remove-OwnedPath $releaseRoot
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
+}
+if (Test-Path -LiteralPath $zipChecksumPath) {
+    Remove-Item -LiteralPath $zipChecksumPath -Force
 }
 New-Item -ItemType Directory -Force $buildRoot | Out-Null
 
@@ -76,5 +80,12 @@ $lines = Get-ChildItem -LiteralPath $releaseRoot -File -Recurse |
     }
 [IO.File]::WriteAllLines($checksumPath, $lines, [Text.UTF8Encoding]::new($false))
 Compress-Archive -LiteralPath $releaseRoot -DestinationPath $zipPath -CompressionLevel Optimal
+$zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText(
+    $zipChecksumPath,
+    "$zipHash  $([IO.Path]::GetFileName($zipPath))`n",
+    [Text.UTF8Encoding]::new($false)
+)
 Write-Output $releaseRoot
 Write-Output $zipPath
+Write-Output $zipChecksumPath
