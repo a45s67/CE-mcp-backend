@@ -37,8 +37,18 @@ jobs:
           uv run --locked python -m unittest -v
           tests.test_mcp_adapter tests.test_mcp_metadata tests.test_mcp_wire_contracts
           tests.test_schema_contracts tests.test_tool_contracts
-      - name: Test bridge installer
-        run: uv run --locked python -m unittest -v tests.test_install_bridge
+      - name: Test bridge installer packaged path
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_install_bridge.InstallBridgeTests.test_packaged_path_falls_back_to_source_checkout_for_editable_install
+      - name: Test bridge installer atomic update
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_install_bridge.InstallBridgeTests.test_installs_atomically_and_refuses_implicit_overwrite
+      - name: Test bridge installer directory validation
+        run: >-
+          uv run --locked python -m unittest -v
+          tests.test_install_bridge.InstallBridgeTests.test_rejects_non_ce_directory
       - name: Test Lua bridge contracts
         run: uv run --locked python -m unittest -v tests.test_lua_bridge
       - name: Test MCP stdio integration
