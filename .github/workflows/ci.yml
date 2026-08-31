@@ -37,11 +37,16 @@ jobs:
           uv run --locked python -m unittest -v
           tests.test_mcp_adapter tests.test_mcp_metadata tests.test_mcp_wire_contracts
           tests.test_schema_contracts tests.test_tool_contracts
-      - name: Test runtime and release scripts
-        run: >-
-          uv run --locked python -m unittest -v
-          tests.test_install_bridge tests.test_lua_bridge tests.test_mcp_stdio_integration
-          tests.test_release_scripts tests.test_server_config
+      - name: Test bridge installer
+        run: uv run --locked python -m unittest -v tests.test_install_bridge
+      - name: Test Lua bridge contracts
+        run: uv run --locked python -m unittest -v tests.test_lua_bridge
+      - name: Test MCP stdio integration
+        run: uv run --locked python -m unittest -v tests.test_mcp_stdio_integration
+      - name: Test release scripts
+        run: uv run --locked python -m unittest -v tests.test_release_scripts
+      - name: Test server configuration
+        run: uv run --locked python -m unittest -v tests.test_server_config
       - name: Test scripted smoke workflows
         run: >-
           uv run --locked python -m unittest -v
