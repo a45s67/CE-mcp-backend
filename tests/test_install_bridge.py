@@ -18,7 +18,7 @@ class InstallBridgeTests(unittest.TestCase):
                 patch("ce_mcp.install_bridge.sysconfig.get_path", return_value=str(root / "data")),
                 patch("ce_mcp.install_bridge.__file__", str(module)),
             ):
-                self.assertEqual(packaged_bridge_path(), bridge)
+                self.assertEqual(packaged_bridge_path().resolve(), bridge.resolve())
 
     def test_installs_atomically_and_refuses_implicit_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
