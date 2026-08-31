@@ -24,7 +24,14 @@ jobs:
       - name: Sync locked environment
         run: uv sync --locked --group build
       - name: Run offline unit and scripted tests
-        run: uv run --locked python -m unittest discover -s tests -v
+        shell: powershell
+        run: |
+          uv run --locked python -m unittest discover -s tests -v 2>&1 | Tee-Object test-output.txt
+          if ($LASTEXITCODE -ne 0) {
+            $tail = (Get-Content test-output.txt -Tail 80) -join "%0A"
+            Write-Output "::error title=Unit test failure::$tail"
+            exit 1
+          }
       - name: Build Python distributions
         run: uv build --no-sources
       - name: Build standalone Windows release
