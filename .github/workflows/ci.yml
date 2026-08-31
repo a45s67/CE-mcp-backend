@@ -32,8 +32,13 @@ jobs:
         if: steps.unit-tests.outcome == 'failure'
         shell: powershell
         run: |
-          $tail = (Get-Content test-output.txt -Tail 80) -join "%0A"
-          Write-Output "::error title=Unit test failure::$tail"
+          $diagnostic = (Get-Content test-output.txt | Where-Object {
+            $_ -match 'FAIL|ERROR|Traceback|AssertionError'
+          }) -join ' | '
+          if ($diagnostic.Length -gt 4000) {
+            $diagnostic = $diagnostic.Substring(0, 4000)
+          }
+          Write-Output "::error title=Unit test failure::$diagnostic"
           exit 1
       - name: Build Python distributions
         run: uv build --no-sources
