@@ -101,7 +101,7 @@ class StatusContractTests(unittest.TestCase):
         validate(
             tool["outputSchema"],
             {
-                "backend": {"version": "0.0.1", "protocolVersion": 1},
+                "backend": {"version": "0.1.0", "protocolVersion": 1},
                 "bridge": {"connected": False},
                 "capabilities": {
                     "available": ["memory.read"],

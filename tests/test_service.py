@@ -26,7 +26,7 @@ def status_result(session=None):
     value = {
         "bridge": {
             "connected": True,
-            "version": "0.0.1",
+            "version": "0.1.0",
             "dbvmReadiness": "not-ready",
         },
         "capabilities": {

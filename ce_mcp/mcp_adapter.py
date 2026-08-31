@@ -9,6 +9,7 @@ import anyio
 import mcp.types as types
 from mcp.server import Server
 
+from . import __version__
 from .models import ErrorDetail, NextAction
 from .service import BackendService, ToolOutcome
 
@@ -245,7 +246,7 @@ def create_mcp_server(service: BackendService) -> Server:
 
     return Server(
         "ce-mcp-backend",
-        version="0.0.1",
+        version=__version__,
         title="Cheat Engine MCP Backend",
         description="Safe, structured Cheat Engine dynamic-analysis tools",
         instructions=(

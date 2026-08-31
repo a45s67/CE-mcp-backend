@@ -15,6 +15,7 @@ from time import monotonic, sleep
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
+from . import __version__
 from .artifacts import ArtifactStore, ArtifactStoreError
 from .audit import AuditLogError
 from .catalog import load_catalog
@@ -144,7 +145,7 @@ class BackendService:
         bridge: BridgeClient,
         contract_dir: Path,
         *,
-        backend_version: str = "0.0.1",
+        backend_version: str = __version__,
         request_deadline_ms: int = 5_000,
         max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
         artifact_store: ArtifactStore | None = None,
