@@ -1,12 +1,15 @@
 import asyncio
 import json
+import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 try:
     import mcp.types as types
     from ce_mcp.mcp_adapter import build_tool_list, create_mcp_server, invoke_tool
-    from ce_mcp.mcp_server import StaticTokenVerifier, create_http_app
+    from ce_mcp.mcp_server import StaticTokenVerifier, create_http_app, load_http_token
     from mcp.server.lowlevel.server import NotificationOptions
 except ModuleNotFoundError:
     types = None
@@ -84,6 +87,85 @@ class McpAdapterTests(unittest.TestCase):
             )
         self.assertEqual(missing.status_code, 401)
         self.assertEqual(invalid.status_code, 401)
+
+    def test_http_health_distinguishes_liveness_auth_and_bridge_readiness(self) -> None:
+        from starlette.testclient import TestClient
+
+        token = "a" * 32
+        app = create_http_app(self.service, "127.0.0.1", 8001, token)
+        with TestClient(app, base_url="http://127.0.0.1:8001") as client:
+            self.assertEqual(client.get("/health/live").json(), {"status": "ok"})
+            unauthenticated = client.get("/health/ready")
+            unavailable = client.get(
+                "/health/ready", headers={"Authorization": f"Bearer {token}"}
+            )
+            self.bridge.register(
+                "status.get",
+                lambda params: {
+                    "bridge": {"connected": True, "version": "0.1.0"},
+                    "capabilities": {
+                        "available": [],
+                        "enabled": [],
+                        "disabledReasons": {},
+                        "limits": {},
+                    },
+                },
+            )
+            ready = client.get(
+                "/health/ready", headers={"Authorization": f"Bearer {token}"}
+            )
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertEqual(unauthenticated.headers["WWW-Authenticate"], "Bearer")
+        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(unavailable.json()["diagnostic_code"], "METHOD_NOT_FOUND")
+        self.assertEqual(ready.status_code, 200)
+        self.assertEqual(ready.json()["status"], "ready")
+
+    def test_streamable_http_initializes_and_lists_tools(self) -> None:
+        from starlette.testclient import TestClient
+
+        token = "a" * 32
+        app = create_http_app(self.service, "127.0.0.1", 8001, token)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        with TestClient(app, base_url="http://127.0.0.1:8001") as client:
+            initialized = client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "ce-http-test", "version": "1"},
+                    },
+                },
+            )
+            listed = client.post(
+                "/mcp",
+                headers={**headers, "MCP-Protocol-Version": "2025-06-18"},
+                json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            )
+        self.assertEqual(initialized.status_code, 200)
+        self.assertEqual(initialized.json()["result"]["serverInfo"]["name"], "ce-mcp-backend")
+        self.assertEqual(listed.status_code, 200)
+        names = [tool["name"] for tool in listed.json()["result"]["tools"]]
+        self.assertIn("ce.status", names)
+
+    def test_http_token_file_loading(self) -> None:
+        token = "a" * 32
+        with TemporaryDirectory(dir=ROOT) as directory:
+            token_file = Path(directory) / "http.token"
+            token_file.write_text(token + "\n", encoding="utf-8")
+            self.assertEqual(load_http_token(token_file), token)
+        with patch.dict(os.environ, {"CE_MCP_TOKEN": "b" * 32}):
+            with self.assertRaisesRegex(ValueError, "--token-file is required"):
+                load_http_token(None)
 
 
 if __name__ == "__main__":

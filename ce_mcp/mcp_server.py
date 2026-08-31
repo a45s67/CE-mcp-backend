@@ -13,6 +13,9 @@ from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.stdio import stdio_server
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from .mcp_adapter import create_mcp_server
 from .audit import JsonlAuditLog
@@ -25,11 +28,14 @@ from .transport import DEFAULT_PIPE_NAME, WindowsNamedPipeBridgeClient
 class StaticTokenVerifier:
     def __init__(self, token: str) -> None:
         if len(token) < 32:
-            raise ValueError("CE_MCP_TOKEN must contain at least 32 characters")
+            raise ValueError("Streamable HTTP bearer token must contain at least 32 characters")
         self._token = token
 
+    def matches(self, token: str) -> bool:
+        return hmac.compare_digest(token, self._token)
+
     async def verify_token(self, token: str) -> AccessToken | None:
-        if not hmac.compare_digest(token, self._token):
+        if not self.matches(token):
             return None
         return AccessToken(
             token=token,
@@ -44,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument(
+        "--token-file",
+        type=Path,
+        help="read the Streamable HTTP bearer token from a local file",
+    )
     parser.add_argument("--pipe", default=DEFAULT_PIPE_NAME)
     parser.add_argument("--ce-pid", type=int, help="select one CE instance when auto-discovery is ambiguous")
     parser.add_argument("--deadline-ms", type=int, default=5_000)
@@ -104,10 +115,45 @@ def create_http_app(service: BackendService, host: str, port: int, token: str):
     if not 1 <= port <= 65535:
         raise ValueError("port must be between 1 and 65535")
     server = create_mcp_server(service)
+    verifier = StaticTokenVerifier(token)
     url_host = "[::1]" if host == "::1" else host
     issuer = f"http://{url_host}:{port}"
+
+    async def live(_request: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok"})
+
+    async def ready(request: Request) -> JSONResponse:
+        authorization = request.headers.get("authorization", "")
+        scheme, separator, credential = authorization.partition(" ")
+        if separator != " " or scheme.lower() != "bearer" or not verifier.matches(credential):
+            return JSONResponse(
+                {"error": {"code": "UNAUTHENTICATED", "message": "authentication required"}},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        outcome = await anyio.to_thread.run_sync(service.call_tool, "ce.status", {})
+        if outcome.result is not None:
+            return JSONResponse(
+                {
+                    "status": "ready",
+                    "bridge_connected": True,
+                    "diagnostic_code": None,
+                }
+            )
+        code = outcome.error.code if outcome.error is not None else "BRIDGE_UNAVAILABLE"
+        return JSONResponse(
+            {
+                "status": "not_ready",
+                "bridge_connected": False,
+                "diagnostic_code": code,
+            },
+            status_code=503,
+        )
+
     return server.streamable_http_app(
         streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
         max_request_body_size=1024 * 1024,
         host=host,
         auth=AuthSettings(
@@ -115,7 +161,11 @@ def create_http_app(service: BackendService, host: str, port: int, token: str):
             resource_server_url=f"{issuer}/mcp",
             required_scopes=["ce:tools"],
         ),
-        token_verifier=StaticTokenVerifier(token),
+        token_verifier=verifier,
+        custom_starlette_routes=[
+            Route("/health/live", live, methods=["GET"]),
+            Route("/health/ready", ready, methods=["GET"]),
+        ],
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=[f"{host}:{port}", host],
@@ -131,15 +181,27 @@ def run_http(service: BackendService, host: str, port: int, token: str) -> None:
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
+def load_http_token(token_file: Path | None) -> str:
+    if token_file is None:
+        raise ValueError("--token-file is required for Streamable HTTP")
+    try:
+        token = token_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ValueError(f"cannot read HTTP token file: {exc}") from exc
+    if not token:
+        raise ValueError("--token-file must provide a Streamable HTTP bearer token")
+    if "\n" in token or "\r" in token:
+        raise ValueError("Streamable HTTP bearer token must be a single line")
+    return token
+
+
 def run(argv: Sequence[str] | None = None) -> None:
     options = build_parser().parse_args(argv)
     service = create_service(options)
     if options.transport == "stdio":
         anyio.run(run_stdio, service)
         return
-    token = os.environ.get("CE_MCP_TOKEN", "")
-    if not token:
-        raise ValueError("CE_MCP_TOKEN is required for Streamable HTTP")
+    token = load_http_token(options.token_file)
     run_http(service, options.host, options.port, token)
 
 

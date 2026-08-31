@@ -19,10 +19,14 @@ offers a generic command or Lua escape hatch.
 
 ## Transport
 
-Stdio is the normal MCP transport. Optional Streamable HTTP is restricted to
-localhost and requires a backend-only token. The sidecar accepts only local CE
-named pipes, discovers a single CE instance by default, and verifies that the
-pipe server PID matches the selected CE process.
+Stdio is the normal MCP transport. Optional Streamable HTTP is stateless,
+returns JSON responses, is restricted to localhost, and requires a backend-only
+Bearer token on every MCP request. An unauthenticated liveness endpoint reports
+only that the event loop is serving; authenticated readiness calls the same
+`ce.status` service boundary and reports a bounded diagnostic without target or
+credential data. The sidecar accepts only local CE named pipes, discovers a
+single CE instance by default, and verifies that the pipe server PID matches the
+selected CE process.
 
 Bridge messages are length-prefixed UTF-8 JSON with a bounded frame size,
 request correlation, deadlines, and strict schemas. A disconnected connection

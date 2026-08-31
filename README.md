@@ -78,9 +78,48 @@ read-only deployment can pass a local JSON file containing
 `{"profile":"inspect"}` through `--policy-config`. DBK/DBVM support is deferred,
 disabled by default, and never initialized by this project; see [TODO.md](TODO.md).
 
-For localhost Streamable HTTP, bind only to `127.0.0.1` and set a distinct
-backend-only `CE_MCP_TOKEN` of at least 32 characters. Do not expose the backend
-port directly to remote clients.
+### Streamable HTTP
+
+Stdio remains the Codex plugin default. For a direct MCP client or local gateway,
+start the same backend as an authenticated, stateless Streamable HTTP server:
+
+```powershell
+$tokenPath = Join-Path $env:LOCALAPPDATA "CE-MCP\http.token"
+New-Item -ItemType Directory -Force (Split-Path $tokenPath) | Out-Null
+$token = [Convert]::ToBase64String(
+  [Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
+)
+[IO.File]::WriteAllText($tokenPath, $token)
+
+uv run --locked ce-mcp-backend `
+  --transport streamable-http `
+  --host 127.0.0.1 `
+  --port 8001 `
+  --token-file $tokenPath
+```
+
+Configure the client with endpoint `http://127.0.0.1:8001/mcp` and header
+`Authorization: Bearer <the token>`. The backend implements stateless
+Streamable HTTP with JSON responses. Every MCP request requires the token.
+
+Health checks are separate from MCP:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8001/health/live
+$headers = @{ Authorization = "Bearer $token" }
+Invoke-RestMethod http://127.0.0.1:8001/health/ready -Headers $headers
+```
+
+`/health/live` only proves that the HTTP server is running. Authenticated
+`/health/ready` returns HTTP 200 when the CE bridge answers `ce.status`, or HTTP
+503 with a bounded `diagnostic_code` when it cannot. The token must contain at
+least 32 characters. Only its file path is accepted as server configuration;
+the secret is not read from an environment variable or accepted on the command
+line.
+
+Only loopback hosts (`127.0.0.1`, `::1`, or `localhost`) are accepted. Do not
+publish this plaintext HTTP endpoint to a LAN or the internet; use a trusted
+local gateway if remote access is required.
 
 ## Recovery and uninstall
 
