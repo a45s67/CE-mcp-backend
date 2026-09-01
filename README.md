@@ -1,18 +1,17 @@
 # CE MCP Backend
 
-Standalone, structured Cheat Engine 7.7 dynamic analysis through MCP. The
-backend exposes bounded tools for explicitly authorized Windows processes; it
-does not expose arbitrary Lua, shell commands, injection, or memory writes.
+Structured Cheat Engine 7.7 dynamic analysis through MCP for explicitly
+authorized Windows processes. The backend excludes arbitrary Lua, shell
+commands, injection, and memory writes.
 
-The Windows release does not require Python, uv, a Codex plugin, or a skill.
-Tool behavior is documented by MCP itself and in
-[CE_MCP_TOOLS.md](CE_MCP_TOOLS.md). Trust boundaries are described in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+The standalone Windows release requires neither Python nor a Codex plugin or
+skill. See [CE_MCP_TOOLS.md](CE_MCP_TOOLS.md) for the tool catalog and
+[ARCHITECTURE.md](ARCHITECTURE.md) for trust boundaries.
 
-## Install the Windows release
+## Install
 
-Prerequisites: 64-bit Windows and Cheat Engine 7.7. Extract
-`ce-mcp-windows-x64.zip`, close every Cheat Engine instance, and run:
+Requirements: 64-bit Windows and Cheat Engine 7.7. Extract
+`ce-mcp-windows-x64.zip`, close all CE instances, and run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -20,7 +19,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -CheatEngineDir "C:\tools\Cheat Engine"
 ```
 
-The resulting installation is:
+The installer creates:
 
 ```text
 Cheat Engine/
@@ -28,50 +27,21 @@ Cheat Engine/
 |   `-- ce_mcp_bridge.lua
 `-- mcp/
     |-- server.exe
-    |-- ce-mcp-control.exe       (optional host controller)
+    |-- ce-mcp-control.exe       optional
     |-- config.json
     |-- http.token
     `-- standalone runtime files
 ```
 
-The first install generates a random 48-byte HTTP token and restricts its ACL
-to the installing Windows user. Normal upgrades preserve `config.json` and
-`http.token`. Use `-RotateToken` only when every registered client will also be
-updated.
+The first install creates a random 48-byte token restricted to the installing
+Windows user. Upgrades preserve `config.json` and `http.token`; use
+`-RotateToken` only when all clients can be updated. Restart CE after install.
+CE autorun owns `server.exe` startup and shutdown.
 
-Restart Cheat Engine after installation. Its autorun bridge creates a
-PID-specific local named pipe and starts `mcp\server.exe` once with the exact CE
-PID and `mcp\config.json`. Closing CE causes its owned HTTP server to exit.
+## Connect a client
 
-## Optional host controller
-
-Ordinary users can continue opening and closing Cheat Engine normally. The
-optional `mcp\ce-mcp-control.exe` exists for a lifecycle-aware gateway or a
-terminal workflow:
-
-```powershell
-& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" status
-& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" start
-& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" stop
-& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" restart
-```
-
-It emits exactly one bounded JSON object. `start` launches Cheat Engine, never
-`server.exe`; the autorun bridge remains the only sidecar launcher. Normal
-`stop` and `restart` require authenticated MCP state and refuse to close CE
-while a target session is attached. `--force` is an explicit last resort,
-limited to the exact CE process under the configured installation root.
-
-The default launcher is `<CE>\Cheat Engine.exe`. Use
-`--executable <filename>` only to select another recognized executable directly
-inside the same CE root. `--timeout-ms` accepts 1000 through 60000. See the
-[host-control contract](docs/contracts/host-control-v1.md) for exact semantics.
-
-## Connect an MCP client
-
-The default endpoint is `http://127.0.0.1:8001/mcp`. Every MCP request requires
-the Bearer token. For Codex, copy the installed token into the user environment
-and register the plain MCP endpoint:
+The default endpoint is `http://127.0.0.1:8001/mcp`. For Codex, expose the
+installed token through a user environment variable and register the endpoint:
 
 ```powershell
 $tokenPath = "C:\tools\Cheat Engine\mcp\http.token"
@@ -83,23 +53,15 @@ codex mcp add cheat-engine `
   --bearer-token-env-var CE_MCP_TOKEN
 ```
 
-Restart Codex after changing its user environment. The command stores the
-environment-variable name, not the secret value. Other Streamable HTTP MCP
-clients should use the same URL and `Authorization: Bearer <token>` header.
+Restart Codex after changing its environment. Other Streamable HTTP clients
+use the same endpoint and `Authorization: Bearer <token>`.
 
-The server itself resolves authentication in this order:
-
-1. `CE_MCP_TOKEN`, when inherited by the server process.
-2. `tokenFile` from `config.json`, resolved relative to that config file.
-3. Refuse HTTP startup when neither source is available.
-
-This lets CE's automatic launch use `http.token`, while controlled deployments
-can override it through the environment without putting a secret in process
-arguments.
+The server reads authentication from `CE_MCP_TOKEN` when present, otherwise
+from `tokenFile` in `config.json`. It refuses HTTP startup without either.
 
 ## Configuration and health
 
-Installed `mcp\config.json` defaults to:
+Default `mcp\config.json`:
 
 ```json
 {
@@ -113,15 +75,10 @@ Installed `mcp\config.json` defaults to:
 }
 ```
 
-Only `127.0.0.1`, `::1`, and `localhost` are accepted. Do not publish this
-plaintext endpoint to a LAN or the internet.
-
-`maxOutputBytes` defaults to 1 MiB, accepts 4096 through 4194304 bytes, and
-limits each MCP tool result on both stdio and HTTP. Oversized results are never
-returned as truncated JSON. The server instead returns
-`OUTPUT_LIMIT_EXCEEDED` with measured and configured byte counts. Read-only
-paged calls may receive a smaller `limit` or `count` suggestion; completed
-mutations are never replayed and require state reconciliation.
+Only `127.0.0.1`, `::1`, and `localhost` are accepted. Do not proxy or expose
+this plaintext endpoint. `maxOutputBytes` accepts 4096 through 4194304 bytes;
+oversized results return `OUTPUT_LIMIT_EXCEEDED` with measured and configured
+sizes instead of truncated JSON.
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8001/health/live
@@ -129,61 +86,56 @@ $headers = @{ Authorization = "Bearer $env:CE_MCP_TOKEN" }
 Invoke-RestMethod http://127.0.0.1:8001/health/ready -Headers $headers
 ```
 
-Liveness only proves that HTTP is serving. Authenticated readiness returns 200
-when the CE bridge answers `ce.status`, or 503 with a bounded diagnostic code.
+Liveness proves only that HTTP is serving. Authenticated readiness also checks
+the CE bridge through `ce.status`.
 
 ## Use
 
-The MCP server instructions tell clients to begin with `ce.status`, explicitly
-attach using `ce.process`, preserve session and debugger stop generations, and
-clean up owned operations and breakpoints. Never retry an `OUTCOME_UNKNOWN`
-mutation. DBK and DBVM are deferred, disabled by default, and never initialized
-by this project; see [TODO.md](TODO.md).
+Begin with `ce.status`, select and attach an explicit PID through `ce.process`,
+and preserve returned session, generation, and debugger stop-generation values.
+Close owned operations and breakpoints. Never automatically retry an
+`OUTCOME_UNKNOWN` mutation.
 
-Tool `content` is a short human-readable summary. Authoritative data remains in
-`structuredContent`. Error `suggestedAction` and `nextActions` values are
-optional recovery hints authored by this backend—not Cheat Engine or MCP—and
-are never executed by the server. Clients may ignore them. `execution` is one
-of `suggested`, `required_before_retry`, or `manual`; any mutation still
-requires the normal authorization and generation checks.
+`structuredContent` is authoritative; `content` is a short summary.
+`suggestedAction` and `nextActions` are optional backend-authored hints, not CE
+or MCP directives, and are never executed by the server.
 
-If multiple CE instances are needed, each requires a distinct HTTP port. The
-first release deliberately uses one configured endpoint and fails on a port
-collision instead of silently selecting another port.
+DBK and DBVM remain disabled and are never initialized by this project. Each
+simultaneous CE instance requires a distinct configured HTTP port.
 
-## Source development
+## Optional host controller
 
-Python 3.10 or newer and uv are required only for development:
+Normal manual CE startup and shutdown remains supported. The optional
+controller provides terminal lifecycle operations:
+
+```powershell
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" status
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" start
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" stop
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" restart
+```
+
+It returns one bounded JSON object. It starts CE, never `server.exe`; normal
+stop and restart refuse attached or unobservable state. See the
+[host-control contract](docs/contracts/host-control-v1.md) for arguments,
+exit codes, and force semantics.
+
+## Development
+
+Python 3.10 or newer and uv are required:
 
 ```powershell
 uv sync --locked --group build
 uv run --locked python -m unittest discover -s tests -v
-```
-
-Build and verify the same Windows artifact used by CI:
-
-```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build-standalone.ps1
-
 uv run --locked python .\scripts\verify-release.py `
   .\dist\ce-mcp-windows-x64
-
 uv run --locked python .\scripts\verify-compiled.py `
   --server .\dist\ce-mcp-windows-x64\mcp\server.exe `
   --controller .\dist\ce-mcp-windows-x64\mcp\ce-mcp-control.exe
 ```
 
-The compiled verifier exercises `--help`, stdio MCP, Streamable HTTP, both
-authentication paths, health, initialization, tool listing, missing-bridge
-errors, and bounded shutdown without launching Cheat Engine. Controlled real-CE
-smoke commands remain local release evidence and are not run on hosted CI.
-
-Repository layout:
-
-- `bridge/`: CE autorun Lua bridge and real-CE probes.
-- `ce_mcp/`: server, policy, transport, artifacts, and schemas.
-- `ce_controller/`: optional dependency-free host lifecycle controller.
-- `ce_mcp/contracts/v1/tools/`: authoritative public MCP tool contracts.
-- `scripts/`: standalone build, installer, and offline verification gates.
-- `tests/`: unit, contract, and scripted integration tests.
+Hosted CI runs source and compiled scripted tests without CE. Controlled
+real-CE smoke tests are a local release gate. CE-facing changes must follow
+[DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md).

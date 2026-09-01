@@ -102,5 +102,5 @@ and unrestricted filesystem access.
 - CE lifecycle implementation: `bridge/ce_mcp_bridge.lua`
 - Optional host lifecycle: `ce_controller/` and
   `docs/contracts/host-control-v1.md`
-- Runtime evidence: `bridge/probes/RESULTS.md`
+- CE lifecycle probes: `bridge/probes/`
 - Release behavior: automated tests plus controlled real-CE smoke gates
