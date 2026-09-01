@@ -15,6 +15,7 @@ def main() -> None:
     required = {
         "autorun/ce_mcp_bridge.lua",
         "mcp/server.exe",
+        "mcp/ce-mcp-control.exe",
         "mcp/config.example.json",
         "README.md",
         "CE_MCP_TOOLS.md",

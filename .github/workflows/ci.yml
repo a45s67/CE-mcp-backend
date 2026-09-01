@@ -72,7 +72,10 @@ jobs:
         shell: powershell
         run: .\scripts\verify-installer.ps1
       - name: Verify compiled MCP transports
-        run: uv run --locked python .\scripts\verify-compiled.py --server .\dist\ce-mcp-windows-x64\mcp\server.exe
+        run: >-
+          uv run --locked python .\scripts\verify-compiled.py
+          --server .\dist\ce-mcp-windows-x64\mcp\server.exe
+          --controller .\dist\ce-mcp-windows-x64\mcp\ce-mcp-control.exe
       - name: Upload standalone release
         uses: actions/upload-artifact@v7
         with:
@@ -115,9 +118,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $notesFile = ".\.github\release-notes\$env:GITHUB_REF_NAME.md"
+          if (-not (Test-Path -LiteralPath $notesFile)) {
+            throw "release notes are missing for $env:GITHUB_REF_NAME"
+          }
           gh release create $env:GITHUB_REF_NAME `
             .\dist\ce-mcp-windows-x64.zip `
             .\dist\ce-mcp-windows-x64.zip.sha256 `
             --verify-tag `
             --title "CE MCP Backend $env:GITHUB_REF_NAME" `
-            --notes-file .\.github\release-notes\v0.1.0.md
+            --notes-file $notesFile

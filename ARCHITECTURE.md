@@ -10,12 +10,23 @@ Cheat Engine -- owns sidecar lifetime --> PID-specific named pipe
       +---------------- autorun Lua bridge <--------------------+
                                |
                     explicitly attached Windows target
+
+Optional gateway/terminal --> host controller --> Cheat Engine process only
 ```
 
 The Python sidecar owns MCP schemas, validation, capability policy, session
 generation, audit metadata, artifact storage, and transport deadlines. The Lua
 bridge owns CE API calls and connection-scoped CE resources. Neither layer
 offers a generic command or Lua escape hatch.
+
+The optional controller is a separate host-lifecycle trust boundary. It is not
+an MCP tool and cannot attach to a target. It starts only a recognized CE
+executable under the resolved installation root; CE autorun still exclusively
+starts the sidecar. Status and safe shutdown use authenticated MCP observation,
+exact executable-path process identity, bounded deadlines, and graceful
+`WM_CLOSE`. Normal stop/restart fail closed for attached or unobservable state.
+Explicit force mode is limited to the same verified process handle and never
+changes DBK or DBVM state.
 
 ## Transport
 
@@ -89,5 +100,7 @@ and unrestricted filesystem access.
 - Public API: `ce_mcp/contracts/v1/tools/*.json`
 - Sidecar routing and invariants: `ce_mcp/service.py`, `ce_mcp/policy.py`
 - CE lifecycle implementation: `bridge/ce_mcp_bridge.lua`
+- Optional host lifecycle: `ce_controller/` and
+  `docs/contracts/host-control-v1.md`
 - Runtime evidence: `bridge/probes/RESULTS.md`
 - Release behavior: automated tests plus controlled real-CE smoke gates

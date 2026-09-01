@@ -27,9 +27,10 @@ try {
 
     $bridge = Join-Path $fakeCe "autorun\ce_mcp_bridge.lua"
     $server = Join-Path $fakeCe "mcp\server.exe"
+    $controller = Join-Path $fakeCe "mcp\ce-mcp-control.exe"
     $config = Join-Path $fakeCe "mcp\config.json"
     $token = Join-Path $fakeCe "mcp\http.token"
-    foreach ($path in ($bridge, $server, $config, $token)) {
+    foreach ($path in ($bridge, $server, $controller, $config, $token)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "installer omitted $path"
         }

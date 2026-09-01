@@ -17,7 +17,7 @@ local PIPE_NAME = os.getenv("CE_MCP_PIPE_NAME")
 if #PIPE_NAME > 128 or not PIPE_NAME:match("^[A-Za-z0-9_.-]+$") then
   error("CE_MCP_PIPE_NAME must contain only local pipe-name characters")
 end
-local BRIDGE_VERSION = "0.1.0"
+local BRIDGE_VERSION = "0.2.0"
 local PROTOCOL_VERSION = 1
 local MAX_FRAME_BYTES = 8 * 1024 * 1024
 

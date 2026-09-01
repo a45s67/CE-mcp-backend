@@ -35,7 +35,17 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn("verify-compiled.py", source)
         self.assertIn("verify-installer.ps1", source)
         self.assertIn("build-standalone.ps1", source)
+        self.assertIn("--controller", source)
         self.assertIn("ce-mcp-windows-x64.zip.sha256", source)
         self.assertIn("gh release create", source)
+        self.assertIn('$notesFile = ".\\.github\\release-notes\\$env:GITHUB_REF_NAME.md"', source)
+        self.assertIn("release notes are missing", source)
         self.assertIn("tag $env:GITHUB_REF_NAME does not match packaged version", source)
         self.assertNotIn("cheatengine", source.casefold())
+
+    def test_release_builds_optional_controller_without_another_toolchain(self) -> None:
+        source = (ROOT / "scripts" / "build-standalone.ps1").read_text(encoding="utf-8")
+        self.assertIn("ce-mcp-control.exe", source)
+        self.assertIn("controller runtime conflicts with server runtime", source)
+        self.assertNotIn("cargo", source.casefold())
+        self.assertNotIn("cmake", source.casefold())

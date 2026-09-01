@@ -182,16 +182,48 @@ def verify_http_auth_source(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", type=Path, required=True)
+    parser.add_argument("--controller", type=Path, required=True)
     options = parser.parse_args()
     server = options.server.resolve()
+    controller = options.controller.resolve()
     if not server.is_file():
         raise SystemExit(f"compiled server does not exist: {server}")
+    if not controller.is_file():
+        raise SystemExit(f"compiled controller does not exist: {controller}")
     help_result = subprocess.run(
         [str(server), "--help"], cwd=server.parent, capture_output=True, text=True, timeout=15
     )
     assert help_result.returncode == 0 and "streamable-http" in help_result.stdout
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
+        fake_ce = temporary / "Cheat Engine"
+        fake_mcp = fake_ce / "mcp"
+        fake_mcp.mkdir(parents=True)
+        (fake_mcp / "http.token").write_text("c" * 48, encoding="utf-8")
+        (fake_mcp / "config.json").write_text(json.dumps({
+            "transport": "streamable-http", "host": "127.0.0.1", "port": 43199,
+            "tokenFile": "http.token", "requestDeadlineMs": 5000,
+            "maxOutputBytes": 1048576, "exitWhenCeExits": True,
+        }), encoding="utf-8")
+        controlled = subprocess.run(
+            [str(controller), "status", "--root", str(fake_ce)],
+            cwd=controller.parent, capture_output=True, text=True, timeout=15,
+        )
+        assert controlled.returncode == 0 and controlled.stderr == ""
+        lines = controlled.stdout.splitlines()
+        assert len(lines) == 1
+        control_value = json.loads(lines[0])
+        assert control_value == {
+            "status": "ok", "action": "status", "hostState": "stopped",
+            "mcpState": "stopped", "targetState": "absent", "safeToStop": True,
+        }
+        rejected = subprocess.run(
+            [str(controller), "start", "--force", "--root", str(fake_ce)],
+            cwd=controller.parent, capture_output=True, text=True, timeout=15,
+        )
+        assert rejected.returncode == 2 and rejected.stderr == ""
+        rejected_value = json.loads(rejected.stdout)
+        assert rejected_value["code"] == "INVALID_ARGUMENT"
         anyio.run(verify_stdio, server, temporary)
         verify_http_auth_source(
             server, temporary, label="environment", environment_token="e" * 48

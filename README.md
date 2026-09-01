@@ -28,6 +28,7 @@ Cheat Engine/
 |   `-- ce_mcp_bridge.lua
 `-- mcp/
     |-- server.exe
+    |-- ce-mcp-control.exe       (optional host controller)
     |-- config.json
     |-- http.token
     `-- standalone runtime files
@@ -41,6 +42,30 @@ updated.
 Restart Cheat Engine after installation. Its autorun bridge creates a
 PID-specific local named pipe and starts `mcp\server.exe` once with the exact CE
 PID and `mcp\config.json`. Closing CE causes its owned HTTP server to exit.
+
+## Optional host controller
+
+Ordinary users can continue opening and closing Cheat Engine normally. The
+optional `mcp\ce-mcp-control.exe` exists for a lifecycle-aware gateway or a
+terminal workflow:
+
+```powershell
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" status
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" start
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" stop
+& "C:\tools\Cheat Engine\mcp\ce-mcp-control.exe" restart
+```
+
+It emits exactly one bounded JSON object. `start` launches Cheat Engine, never
+`server.exe`; the autorun bridge remains the only sidecar launcher. Normal
+`stop` and `restart` require authenticated MCP state and refuse to close CE
+while a target session is attached. `--force` is an explicit last resort,
+limited to the exact CE process under the configured installation root.
+
+The default launcher is `<CE>\Cheat Engine.exe`. Use
+`--executable <filename>` only to select another recognized executable directly
+inside the same CE root. `--timeout-ms` accepts 1000 through 60000. See the
+[host-control contract](docs/contracts/host-control-v1.md) for exact semantics.
 
 ## Connect an MCP client
 
@@ -145,7 +170,8 @@ uv run --locked python .\scripts\verify-release.py `
   .\dist\ce-mcp-windows-x64
 
 uv run --locked python .\scripts\verify-compiled.py `
-  --server .\dist\ce-mcp-windows-x64\mcp\server.exe
+  --server .\dist\ce-mcp-windows-x64\mcp\server.exe `
+  --controller .\dist\ce-mcp-windows-x64\mcp\ce-mcp-control.exe
 ```
 
 The compiled verifier exercises `--help`, stdio MCP, Streamable HTTP, both
@@ -157,6 +183,7 @@ Repository layout:
 
 - `bridge/`: CE autorun Lua bridge and real-CE probes.
 - `ce_mcp/`: server, policy, transport, artifacts, and schemas.
+- `ce_controller/`: optional dependency-free host lifecycle controller.
 - `ce_mcp/contracts/v1/tools/`: authoritative public MCP tool contracts.
 - `scripts/`: standalone build, installer, and offline verification gates.
 - `tests/`: unit, contract, and scripted integration tests.

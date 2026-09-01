@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ce-mcp-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cheat Engine MCP backend and bridge contracts"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,6 +12,7 @@ dependencies = ["mcp>=2.1,<3"]
 
 [project.scripts]
 ce-mcp-backend = "ce_mcp.mcp_server:main"
+ce-mcp-control = "ce_controller.cli:main"
 ce-mcp-smoke = "ce_mcp.cli:main"
 ce-mcp-live-smoke = "ce_mcp.mcp_live_smoke:main"
 ce-mcp-e2e-smoke = "ce_mcp.e2e_smoke:main"
@@ -29,7 +30,7 @@ ce-mcp-target-exit-smoke = "ce_mcp.target_exit_smoke:main"
 ce-mcp-install-bridge = "ce_mcp.install_bridge:main"
 
 [tool.setuptools.packages.find]
-include = ["ce_mcp*"]
+include = ["ce_mcp*", "ce_controller*"]
 
 [tool.setuptools.package-data]
 ce_mcp = ["contracts/**/*.json"]
