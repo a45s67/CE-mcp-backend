@@ -19,6 +19,18 @@ FIXTURES = ROOT / "contracts" / "mcp"
 
 @unittest.skipIf(TestClient is None, "HTTP MCP test dependencies are unavailable")
 class McpWireContractTests(unittest.TestCase):
+    def assert_content_only_payload(self, result: dict) -> dict:
+        self.assertNotIn("structuredContent", result)
+        self.assertEqual(len(result["content"]), 1)
+        block = result["content"][0]
+        self.assertEqual(block["type"], "text")
+        payload = json.loads(block["text"])
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(
+            block["text"], json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        )
+        return payload
+
     def test_status_call_matches_checked_in_json_rpc_golden(self) -> None:
         bridge = FakeBridge()
         bridge.register("status.get", lambda params: {
@@ -41,6 +53,30 @@ class McpWireContractTests(unittest.TestCase):
             response = client.post("/mcp", headers=headers, json=request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), expected)
+        payload = self.assert_content_only_payload(response.json()["result"])
+        self.assertIn("backend", payload)
+        self.assertNotIn("result", payload)
+
+    def test_tools_list_does_not_advertise_output_schema(self) -> None:
+        service = BackendService(FakeBridge(), TOOL_DIR)
+        app = create_http_app(service, "127.0.0.1", 8001, "a" * 32)
+        headers = {
+            "Authorization": "Bearer " + "a" * 32,
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2025-06-18",
+        }
+        with TestClient(app, base_url="http://127.0.0.1:8001") as client:
+            response = client.post("/mcp", headers=headers, json={
+                "jsonrpc": "2.0", "id": 11, "method": "tools/list", "params": {},
+            })
+        self.assertEqual(response.status_code, 200)
+        tools = response.json()["result"]["tools"]
+        self.assertTrue(tools)
+        for tool in tools:
+            with self.subTest(tool=tool["name"]):
+                self.assertIn("inputSchema", tool)
+                self.assertNotIn("outputSchema", tool)
 
     def test_malformed_json_returns_bounded_protocol_error(self) -> None:
         service = BackendService(FakeBridge(), TOOL_DIR)
@@ -84,7 +120,9 @@ class McpWireContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         result = response.json()["result"]
         self.assertTrue(result["isError"])
-        error = result["structuredContent"]["error"]
+        payload = self.assert_content_only_payload(result)
+        self.assertEqual(set(payload), {"error"})
+        error = payload["error"]
         self.assertEqual(error["code"], "OUTPUT_LIMIT_EXCEEDED")
         self.assertEqual(error["details"]["limitBytes"], 4096)
         self.assertEqual(error["nextActions"][0]["argumentsPatch"], {"limit": 100})

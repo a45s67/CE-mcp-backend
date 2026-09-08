@@ -20,14 +20,25 @@ class McpLiveSmokeFailure(RuntimeError):
 
 
 def _value(result: Any, tool: str) -> Mapping[str, Any]:
-    value = result.structured_content
+    if result.structured_content is not None:
+        raise McpLiveSmokeFailure(f"{tool}: response is not content-only JSON")
+    if len(result.content) != 1 or result.content[0].type != "text":
+        raise McpLiveSmokeFailure(f"{tool}: expected one JSON text block")
+    try:
+        value = json.loads(result.content[0].text)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise McpLiveSmokeFailure(f"{tool}: invalid JSON text") from exc
+    if not isinstance(value, Mapping):
+        raise McpLiveSmokeFailure(f"{tool}: JSON payload was not an object")
     if result.is_error:
-        error = value.get("error", {}) if isinstance(value, Mapping) else {}
+        error = value.get("error")
+        if not isinstance(error, Mapping):
+            raise McpLiveSmokeFailure(f"{tool}: missing error object")
         raise McpLiveSmokeFailure(
             f"{tool}: {error.get('code', 'UNKNOWN')}: {error.get('message', 'tool failed')}"
         )
-    if not isinstance(value, Mapping):
-        raise McpLiveSmokeFailure(f"{tool}: structuredContent was not an object")
+    if "error" in value:
+        raise McpLiveSmokeFailure(f"{tool}: error payload without isError")
     return value
 
 
@@ -56,6 +67,8 @@ async def run_workflow(target_pid: int, ce_pid: int | None, deadline_ms: int) ->
                 report["steps"].append("initialize")
 
                 listed = await session.list_tools()
+                if any(tool.output_schema is not None for tool in listed.tools):
+                    raise McpLiveSmokeFailure("MCP tool catalog advertised outputSchema")
                 names = [tool.name for tool in listed.tools]
                 required = {"ce.status", "ce.process", "ce.memory_read", "ce.disassembly", "ce.symbols"}
                 if not required.issubset(names):

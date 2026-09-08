@@ -60,14 +60,13 @@ def _annotations(value: dict[str, Any]) -> types.ToolAnnotations:
 
 
 def build_tool_list(service: BackendService) -> list[types.Tool]:
-    """Translate the deterministic checked-in catalog without schema inference."""
+    """Expose input contracts; output schemas remain internal validation only."""
 
     return [
         types.Tool(
             name=definition["name"],
             description=definition["description"],
             inputSchema=definition["inputSchema"],
-            outputSchema=definition["outputSchema"],
             annotations=_annotations(definition["annotations"]),
         )
         for definition in service.catalog
@@ -89,34 +88,13 @@ async def invoke_tool(
     return _bounded_result(service, name, call_arguments, outcome)
 
 
-def _summary(name: str, arguments: dict[str, Any], outcome: ToolOutcome) -> str:
-    if outcome.error is not None:
-        error = outcome.error
-        return (
-            f"{name} failed: {error.code}; recoverable={str(error.recoverable).lower()}; "
-            f"safeToRetry={str(error.safe_to_retry).lower()}."
-        )
-    assert outcome.result is not None
-    result = outcome.result
-    action = arguments.get("action")
-    prefix = f"{name}.{action}" if isinstance(action, str) else name
-    items = result.get("items")
-    if isinstance(items, list):
-        has_more = result.get("nextCursor") is not None or result.get("truncated") is True
-        return f"{prefix} completed: {len(items)} items; hasMore={str(has_more).lower()}."
-    if name == "ce.status":
-        bridge = result.get("bridge")
-        connected = bridge.get("connected") if isinstance(bridge, dict) else None
-        return f"ce.status completed: bridgeConnected={str(bool(connected)).lower()}."
-    return f"{prefix} completed."
-
-
-def _result_dict(text: str, payload: dict[str, Any], is_error: bool) -> dict[str, Any]:
-    return {
-        "content": [{"type": "text", "text": text}],
-        "structuredContent": payload,
-        "isError": is_error,
-    }
+def _result_dict(payload: dict[str, Any], is_error: bool) -> dict[str, Any]:
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":"),
+        ))],
+        isError=is_error,
+    ).model_dump(by_alias=True, exclude_none=True)
 
 
 def _encoded_size(value: dict[str, Any]) -> int:
@@ -141,29 +119,40 @@ def _output_limit_error(
     safe_to_retry = False
     if original.result is not None and not mutation and shrink_field is not None:
         current = arguments.get(shrink_field)
-        recommended = max(1, current // 2) if isinstance(current, int) else 50
-        preserved = tuple(
-            sorted(key for key in arguments if key != shrink_field)[:16]
+        # An omitted count can mean one value; never increase work or prescribe
+        # the same irreducible request as a size-limit recovery.
+        implicit_one = (
+            name == "ce.memory_read" and shrink_field == "count"
         )
-        suggested_action = f"Retry this read with a smaller {shrink_field} value."
-        next_actions = (
-            NextAction(
-                code="RETRY_WITH_SMALLER_RESULT",
-                execution="suggested",
-                reason=f"Reduce {shrink_field} so the response fits the configured limit.",
-                tool=name,
-                arguments_patch={shrink_field: recommended},
-                preserve_arguments=preserved,
-            ),
-        )
-        safe_to_retry = True
+        if current == 1 or (current is None and implicit_one):
+            suggested_action = (
+                f"This read already requests the minimum {shrink_field}; do not repeat it "
+                "unchanged. Use a narrower representation or review the output limit."
+            )
+        else:
+            recommended = max(1, current // 2) if isinstance(current, int) else 1
+            preserved = tuple(
+                sorted(key for key in arguments if key != shrink_field)[:16]
+            )
+            suggested_action = f"Retry this read with a smaller {shrink_field} value."
+            next_actions = (
+                NextAction(
+                    code="RETRY_WITH_SMALLER_RESULT",
+                    execution="suggested",
+                    reason=f"Reduce {shrink_field} so the response fits the configured limit.",
+                    tool=name,
+                    arguments_patch={shrink_field: recommended},
+                    preserve_arguments=preserved,
+                ),
+            )
+            safe_to_retry = True
     elif mutation:
         suggested_action = "Reconcile current state before deciding whether to issue another mutation."
         next_actions = (
             NextAction(
                 code="REFRESH_STATUS",
                 execution="required_before_retry",
-                reason="The mutation completed but its result could not be delivered.",
+                reason="The mutation response could not be delivered; reconcile its outcome.",
                 tool="ce.status",
                 arguments={},
             ),
@@ -177,6 +166,15 @@ def _output_limit_error(
         f"Tool response was {actual_bytes} bytes, exceeding the configured "
         f"{service.max_output_bytes}-byte limit."
     )
+    details = {
+        "actualBytes": actual_bytes,
+        "limitBytes": service.max_output_bytes,
+        "tool": name,
+        "action": action,
+        "outcome": outcome_label,
+    }
+    if original.error is not None:
+        details["originalErrorCode"] = original.error.code
     return ToolOutcome(
         error=ErrorDetail(
             code="OUTPUT_LIMIT_EXCEEDED",
@@ -186,13 +184,7 @@ def _output_limit_error(
             suggested_action=suggested_action,
             advice_source="ce-mcp-backend" if suggested_action is not None else None,
             next_actions=next_actions,
-            details={
-                "actualBytes": actual_bytes,
-                "limitBytes": service.max_output_bytes,
-                "tool": name,
-                "action": action,
-                "outcome": outcome_label,
-            },
+            details=details,
         )
     )
 
@@ -210,8 +202,7 @@ def _bounded_result(
             )
     value = outcome.to_dict()
     payload = dict(outcome.result) if outcome.result is not None else value
-    text = _summary(name, arguments, outcome)
-    candidate = _result_dict(text, payload, outcome.error is not None)
+    candidate = _result_dict(payload, outcome.error is not None)
     actual_bytes = _encoded_size(candidate)
     if actual_bytes > service.max_output_bytes:
         outcome = _output_limit_error(service, name, arguments, actual_bytes, outcome)
@@ -221,20 +212,10 @@ def _bounded_result(
                 action, current_tool=name, current_arguments=arguments
             )
         payload = outcome.to_dict()
-        text = _summary(name, arguments, outcome)
-        candidate = _result_dict(text, payload, True)
+        candidate = _result_dict(payload, True)
         if _encoded_size(candidate) > service.max_output_bytes:
             raise RuntimeError("configured MCP output limit cannot contain its bounded error")
-    return types.CallToolResult(
-        content=[
-            types.TextContent(
-                type="text",
-                text=text,
-            )
-        ],
-        structuredContent=payload,
-        isError=outcome.error is not None,
-    )
+    return types.CallToolResult(**candidate)
 
 
 def create_mcp_server(service: BackendService) -> Server:
@@ -258,7 +239,13 @@ def create_mcp_server(service: BackendService) -> Server:
             "during cleanup. Never retry an OUTCOME_UNKNOWN mutation; reconcile with ce.status "
             "or the relevant read-only status/list action. DBK and DBVM are never initialized "
             "by this server and their tools remain unavailable unless the user configured and "
-            "enabled the separate hypervisor policy explicitly."
+            "enabled the separate hypervisor policy explicitly. "
+            "Tool results are complete bounded JSON objects in one text block; no structuredContent "
+            "is required. A successful call is not proof of complete data or completed cancellation. "
+            "Current native debugger stop/context claims failed live verification: do not use "
+            "start, pause, continue or register snapshots for debugging until reverified. "
+            "Keep status and owned-resource cleanup available. If a read loses the bridge, stop "
+            "the sequence and reconcile status rather than issuing a parallel retry batch."
         ),
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,

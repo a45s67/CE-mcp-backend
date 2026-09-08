@@ -51,8 +51,11 @@ causes the bridge to clean its debugger and operation resources.
 
 Every MCP tool result is measured as compact UTF-8 JSON at the shared adapter
 used by stdio and HTTP. The configured output ceiling defaults to 1 MiB and has
-a 4 MiB hard maximum. `structuredContent` is authoritative; `content` is only a
-bounded summary. An oversized completed mutation is not repeated: the client
+a 4 MiB hard maximum. Results contain exactly one `content` text block holding
+the complete JSON object: the direct success payload or `{ "error": ... }`
+with `isError: true`. Neither `structuredContent` nor an advertised tool
+`outputSchema` is emitted. Checked-in output schemas remain internal validation
+contracts. An oversized completed mutation is not repeated: the client
 receives an `OUTPUT_LIMIT_EXCEEDED` reconciliation error with
 `safeToRetry=false`.
 

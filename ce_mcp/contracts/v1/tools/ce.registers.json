@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.registers",
-  "description": "Read general and optional XMM registers for the currently stopped debugger thread.",
+  "description": "Read general and optional XMM register fields guarded by the cached debugger stop generation. Context freshness is unverified in the current native callback path; a matching stopGeneration or successful read does not prove the thread is stopped or registers are current. Do not use this cached context to choose step destinations pending native verification.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "expectedGeneration", "expectedStopGeneration"], "properties": {
       "action": {"const": "read"}, "includeVectors": {"type": "boolean"},
       "expectedGeneration": {"type": "integer", "minimum": 1},
-      "expectedStopGeneration": {"type": "integer", "minimum": 1}
+      "expectedStopGeneration": {"type": "integer", "minimum": 1, "description": "Required cached stop generation; a match does not verify native stop state or context freshness."}
     }, "additionalProperties": false}
   ]},
   "outputSchema": {"type": "object", "required": ["action", "session", "stopGeneration", "architecture", "general"], "properties": {

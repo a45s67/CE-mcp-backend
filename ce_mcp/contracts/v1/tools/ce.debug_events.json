@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.debug_events",
-  "description": "Page bounded debugger stop events for the current target generation.",
+  "description": "Page recorded debugger events for the current target generation. Events do not prove a sustained native stop; repeated hits were observed while reported paused. Cursor continuity under rolling-buffer rollover is unverified and events may be missed. Do not infer safe stepping or a complete execution history from successful pages.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {
-      "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^[0-9]{1,10}$"},
+      "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^[0-9]{1,10}$", "description": "Use nextCursor for paging, but continuity under rolling-buffer rollover is unverified; a page sequence may miss events."},
       "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "expectedGeneration": {"type": "integer", "minimum": 1}
     }, "additionalProperties": false}
   ]},

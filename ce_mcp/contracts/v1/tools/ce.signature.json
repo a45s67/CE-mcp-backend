@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.signature",
-  "description": "Generate an exact AOB signature unique within an explicit bounded target range.",
+  "description": "Generate an exact AOB signature in an explicit bounded target range that must contain the resolved address. Uniqueness is only within that range, not the whole module or process. Poll ce.operations.get for completion before result, then close the owned signature operation.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "address", "rangeStart", "rangeEnd", "expectedGeneration"], "properties": {
-      "action": {"const": "start"}, "address": {"type": "string", "minLength": 1, "maxLength": 512},
+      "action": {"const": "start"}, "address": {"type": "string", "minLength": 1, "maxLength": 512, "description": "Resolved address must be inside the explicit rangeStart/rangeEnd range; uniqueness applies only within that range."},
       "rangeStart": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
       "rangeEnd": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
       "minBytes": {"type": "integer", "minimum": 4, "maximum": 64},

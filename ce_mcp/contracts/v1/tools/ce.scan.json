@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "ce.scan",
-  "description": "Start/refine a bounded CE memory scan, page completed results, or close its session-bound handle.",
+  "description": "Start a bounded CE memory scan, refine, page results, or close its session-bound handle. AOB scans are immutable: never refine them. For numeric refinement, poll ce.operations.get until completed before refine or results, and poll again after refine. Close owned scan handles when finished, including AOB scans.",
   "inputSchema": {
     "type": "object",
     "oneOf": [
@@ -10,7 +10,7 @@
         "required": ["action", "scanType", "valueType", "value", "expectedGeneration"],
         "properties": {
           "action": {"const": "start"}, "scanType": {"const": "exact"},
-          "valueType": {"type": "string", "enum": ["u8", "i16", "i32", "i64", "f32", "f64", "string", "aob"]},
+          "valueType": {"type": "string", "enum": ["u8", "i16", "i32", "i64", "f32", "f64", "string", "aob"], "description": "AOB scans are immutable and cannot be refined; choose a numeric type for change-based refinement."},
           "value": {"type": "string", "minLength": 1, "maxLength": 4096},
           "rangeStart": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
           "rangeEnd": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,16}$"},
@@ -52,7 +52,7 @@
         "type": "object",
         "required": ["action", "operationId", "scanType", "expectedGeneration"],
         "properties": {
-          "action": {"const": "refine"}, "operationId": {"type": "string", "pattern": "^scan-[0-9a-f]{8}-[0-9a-f]{8}$"},
+          "action": {"const": "refine", "description": "Poll ce.operations.get until completed first. Never refine an AOB scan; poll completion again after numeric refinement."}, "operationId": {"type": "string", "pattern": "^scan-[0-9a-f]{8}-[0-9a-f]{8}$"},
           "scanType": {"type": "string", "enum": ["exact", "between", "bigger", "smaller", "increased", "decreased", "changed", "unchanged"]},
           "value": {"type": "string", "minLength": 1, "maxLength": 4096},
           "value2": {"type": "string", "minLength": 1, "maxLength": 128},

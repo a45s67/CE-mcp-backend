@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.breakpoints",
-  "description": "List, install, or remove generation-bound hardware breakpoints.",
+  "description": "List, install, or remove generation-bound hardware breakpoints. Recorded hits and successful set/list responses do not prove a sustained native stop: repeated events occurred while reported paused. Avoid new breakpoint experiments pending native callback verification; list/remove cleanup remains available. Remove only owned breakpoints, then detach the debugger.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "list"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     {"type": "object", "required": ["action", "address", "trigger", "expectedGeneration"], "properties": {"action": {"const": "set"}, "address": {"type": "string", "minLength": 1, "maxLength": 512}, "trigger": {"type": "string", "enum": ["execute", "write", "access"]}, "size": {"type": "integer", "enum": [1, 2, 4, 8]}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},

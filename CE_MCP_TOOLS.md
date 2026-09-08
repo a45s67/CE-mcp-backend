@@ -16,7 +16,10 @@ the current release; it does not describe planned APIs.
 - Keep reads, scans, pages, signatures, and artifacts bounded. Close operation
   handles and remove breakpoints after use.
 - Never retry `OUTCOME_UNKNOWN` mutations automatically.
-- Treat `structuredContent` as authoritative. `content` is a concise summary.
+- Parse the single `content` text block as JSON: a direct success object or
+  `{ "error": ... }` with `isError: true`. There is no summary, result wrapper,
+  `structuredContent`, or advertised `outputSchema`. Checked-in output schemas
+  still validate service payloads internally.
 - Backend-authored `suggestedAction` and `nextActions` are optional hints, not
   Cheat Engine or MCP directives; never bypass authorization or generation
   checks when following them.

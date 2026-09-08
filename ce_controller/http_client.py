@@ -78,12 +78,21 @@ class McpObserver:
         })
         try:
             result = called["result"]
-            if result.get("isError") is True:
+            if not isinstance(result, dict) or "structuredContent" in result:
+                raise ObservationError("ce.status response is not content-only JSON")
+            content = result["content"]
+            if (not isinstance(content, list) or len(content) != 1
+                    or not isinstance(content[0], dict) or content[0].get("type") != "text"
+                    or not isinstance(content[0].get("text"), str)):
+                raise ObservationError("ce.status response must contain one JSON text block")
+            status = json.loads(content[0]["text"])
+            if not isinstance(status, dict):
+                raise ObservationError("ce.status payload is not an object")
+            if result.get("isError") is True or "error" in status:
                 raise ObservationError("ce.status returned an error")
-            status = result["structuredContent"]
             backend_version = status["backend"]["version"]
             connected = status["bridge"]["connected"]
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
             raise ObservationError("ce.status response is invalid") from exc
         if connected is not True or not isinstance(backend_version, str) or len(backend_version) > 32:
             raise ObservationError("ce.status identity is invalid")

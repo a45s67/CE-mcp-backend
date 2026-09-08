@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "ce.memory_map",
-  "description": "List bounded target memory regions with module and protection metadata.",
+  "description": "List target memory regions with module and protection metadata. Pagination bounds output only: enumeration and naming of all regions happen before paging. BRIDGE_UNAVAILABLE was reproduced even with moduleFilter and limit=5. Avoid repeated failing calls or parallel diagnostic batches; inspect ce.status and isolate enumeration/transport timing before retrying.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10,7 +10,7 @@
       "stateFilter": {"type": "string", "enum": ["commit", "reserve", "free"]},
       "typeFilter": {"type": "string", "enum": ["image", "mapped", "private"]},
       "cursor": {"type": "string", "maxLength": 256},
-      "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Bounds output page size only, not enumeration work or latency; a small limit does not prevent the reproduced BRIDGE_UNAVAILABLE failure."},
       "expectedGeneration": {"type": "integer", "minimum": 1}
     },
     "additionalProperties": false

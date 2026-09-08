@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.debug_control",
-  "description": "Control the probe-verified Windows debugger with stop-generation guards.",
+  "description": "Control the Windows debugger with stop-generation guards. Stopped/paused state is unreliable in the current native callback path: the target was observed running while reported paused. Avoid start, pause, and continue (including stepping) pending native stop/context verification. Status and detach cleanup remain available; remove owned breakpoints before detaching. Successful responses do not prove a sustained native stop.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "status"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "start"}, "interface": {"const": "windows"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "pause"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
-    {"type": "object", "required": ["action", "mode", "expectedGeneration", "expectedStopGeneration"], "properties": {"action": {"const": "continue"}, "mode": {"type": "string", "enum": ["run", "step_into", "step_over"]}, "expectedGeneration": {"type": "integer", "minimum": 1}, "expectedStopGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    {"type": "object", "required": ["action", "mode", "expectedGeneration", "expectedStopGeneration"], "properties": {"action": {"const": "continue"}, "mode": {"type": "string", "enum": ["run", "step_into", "step_over"], "description": "Avoid all resume/step modes pending native stop/context verification; cached paused state does not make them safe."}, "expectedGeneration": {"type": "integer", "minimum": 1}, "expectedStopGeneration": {"type": "integer", "minimum": 1, "description": "Required cached stop guard, not proof of a sustained native stop or fresh context."}}, "additionalProperties": false},
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "detach"}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
   ]},
   "outputSchema": {"type": "object", "required": ["action", "session", "debugger"], "properties": {

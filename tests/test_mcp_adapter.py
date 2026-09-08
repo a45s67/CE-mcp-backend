@@ -31,16 +31,19 @@ class McpAdapterTests(unittest.TestCase):
         self.bridge = FakeBridge()
         self.service = BackendService(self.bridge, TOOL_DIR)
 
-    def test_list_tools_preserves_checked_in_schemas_and_annotations(self) -> None:
+    def test_list_tools_preserves_inputs_and_annotations_without_output_schema(self) -> None:
         tools = build_tool_list(self.service)
         self.assertEqual([tool.name for tool in tools], sorted(tool.name for tool in tools))
         status = next(tool for tool in tools if tool.name == "ce.status")
         self.assertEqual(status.input_schema["additionalProperties"], False)
         self.assertTrue(status.annotations.read_only_hint)
         self.assertFalse(status.annotations.open_world_hint)
-        self.assertIsNotNone(status.output_schema)
+        for tool, definition in zip(tools, self.service.catalog):
+            self.assertEqual(tool.input_schema, definition["inputSchema"])
+            self.assertIn("outputSchema", definition)
+            self.assertNotIn("outputSchema", tool.model_dump(by_alias=True, exclude_none=True))
 
-    def test_call_tool_returns_structured_content_and_error_flag(self) -> None:
+    def test_call_tool_returns_json_content_and_error_flag(self) -> None:
         self.bridge.register(
             "status.get",
             lambda params: {
@@ -56,11 +59,13 @@ class McpAdapterTests(unittest.TestCase):
         success = asyncio.run(invoke_tool(self.service, "ce.status", {}))
         failure = asyncio.run(invoke_tool(self.service, "ce.unknown", {}))
         self.assertFalse(success.is_error)
-        self.assertIn("backend", success.structured_content)
-        self.assertEqual(success.content[0].text, "ce.status completed: bridgeConnected=true.")
-        self.assertLess(len(success.content[0].text), 256)
+        self.assertIn("backend", json.loads(success.content[0].text))
+        for result in (success, failure):
+            self.assertEqual(len(result.content), 1)
+            self.assertEqual(result.content[0].type, "text")
+            self.assertNotIn("structuredContent", result.model_dump(by_alias=True, exclude_none=True))
         self.assertTrue(failure.is_error)
-        self.assertEqual(failure.structured_content["error"]["code"], "METHOD_NOT_FOUND")
+        self.assertEqual(json.loads(failure.content[0].text)["error"]["code"], "METHOD_NOT_FOUND")
 
     def test_output_limit_returns_actionable_error_for_safe_paged_read(self) -> None:
         service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
@@ -71,7 +76,7 @@ class McpAdapterTests(unittest.TestCase):
             ToolOutcome(result={"items": [{"value": "x" * 512}] * 20}),
         )
         self.assertTrue(result.is_error)
-        error = result.structured_content["error"]
+        error = json.loads(result.content[0].text)["error"]
         self.assertEqual(error["code"], "OUTPUT_LIMIT_EXCEEDED")
         self.assertTrue(error["safeToRetry"])
         self.assertEqual(error["details"]["limitBytes"], 4096)
@@ -83,6 +88,52 @@ class McpAdapterTests(unittest.TestCase):
         self.assertEqual(action["execution"], "suggested")
         self.assertEqual(error["adviceSource"], "ce-mcp-backend")
 
+    def test_target_generation_and_memory_bytes_are_visible_in_text(self) -> None:
+        session = {
+            "sessionId": "ce-01jabcdef", "generation": 7, "state": "running",
+            "pid": 4242, "architecture": "x86_64", "pointerWidth": 64,
+        }
+        self.bridge.register("process.attach", lambda params: {"session": session})
+        self.bridge.register("process.get", lambda params: {"session": session})
+        memory = {
+            "session": session, "resolvedAddress": {"address": "0x0000000000001234"},
+            "bytes": "01020304", "encoding": "hex", "complete": True,
+        }
+        self.bridge.register("memory.read", lambda params: memory)
+        for arguments in ({"action": "attach", "pid": 4242}, {"action": "get"}):
+            result = asyncio.run(invoke_tool(self.service, "ce.process", arguments))
+            self.assertFalse(result.is_error, result.content)
+            payload = json.loads(result.content[0].text)
+            self.assertEqual(payload["session"], session)
+            self.assertEqual(payload["action"], arguments["action"])
+        result = asyncio.run(invoke_tool(self.service, "ce.memory_read", {
+            "mode": "raw", "address": "0x1234", "size": 4, "expectedGeneration": 7,
+        }))
+        self.assertFalse(result.is_error, result.content)
+        self.assertEqual(json.loads(result.content[0].text), memory)
+
+    def test_process_get_without_target_preserves_original_error(self) -> None:
+        result = asyncio.run(invoke_tool(self.service, "ce.process", {"action": "get"}))
+        self.assertTrue(result.is_error)
+        self.assertEqual(json.loads(result.content[0].text)["error"]["code"], "NO_TARGET")
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_output_limit_counts_json_text_escaping_and_preserves_exact_boundary(self) -> None:
+        outcome = ToolOutcome(result={"value": '\\"\n' * 3000})
+        result = _bounded_result(self.service, "ce.status", {}, outcome)
+        wire = result.model_dump(by_alias=True, exclude_none=True)
+        size = len(json.dumps(wire, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        self.assertGreater(size, len(result.content[0].text.encode("utf-8")))
+        for limit, expected_error in ((size, False), (size - 1, True)):
+            service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=limit)
+            bounded = _bounded_result(service, "ce.status", {}, outcome)
+            self.assertEqual(bounded.is_error, expected_error)
+            payload = json.loads(bounded.content[0].text)
+            if expected_error:
+                self.assertEqual(payload["error"]["details"]["actualBytes"], size)
+            else:
+                self.assertEqual(payload, outcome.result)
+
     def test_output_limit_never_recommends_replaying_a_mutation(self) -> None:
         service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
         result = _bounded_result(
@@ -91,11 +142,48 @@ class McpAdapterTests(unittest.TestCase):
             {"action": "attach", "pid": 42},
             ToolOutcome(result={"value": "x" * 5000}),
         )
-        error = result.structured_content["error"]
+        error = json.loads(result.content[0].text)["error"]
         self.assertFalse(error["safeToRetry"])
         self.assertEqual(error["details"]["outcome"], "completed_response_not_returned")
         self.assertEqual(error["nextActions"][0]["tool"], "ce.status")
         self.assertEqual(error["nextActions"][0]["execution"], "required_before_retry")
+
+    def test_output_limit_does_not_increase_default_work_or_repeat_minimum(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        outcome = ToolOutcome(result={"value": "x" * 5000})
+        cases = [
+            ("ce.memory_read", {"mode": "typed", "dataType": "u32", "address": "0x400000"}),
+            ("ce.memory_read", {"mode": "raw", "address": "0x400000", "size": 1}),
+            ("ce.process", {"action": "list", "limit": 1}),
+        ]
+        for name, arguments in cases:
+            with self.subTest(name=name, arguments=arguments):
+                result = _bounded_result(service, name, arguments, outcome)
+                error = json.loads(result.content[0].text)["error"]
+                self.assertFalse(error["safeToRetry"])
+                self.assertFalse(error.get("nextActions"))
+                self.assertIn("minimum", error["suggestedAction"])
+        for name, arguments, field in (
+            ("ce.process", {"action": "list"}, "limit"),
+            ("ce.disassembly", {"action": "list", "address": "0x400000"}, "instructionCount"),
+            ("ce.memory_read", {"mode": "typed", "address": "0x400000", "dataType": "string"}, "maxStringBytes"),
+        ):
+            with self.subTest(name=name, field=field):
+                result = _bounded_result(service, name, arguments, outcome)
+                error = json.loads(result.content[0].text)["error"]
+                self.assertTrue(error["safeToRetry"])
+                self.assertEqual(error["nextActions"][0]["argumentsPatch"], {field: 1})
+
+    def test_oversized_mutation_error_does_not_claim_success(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        result = _bounded_result(service, "ce.process", {"action": "attach", "pid": 42},
+            ToolOutcome(error=ErrorDetail("OUTCOME_UNKNOWN", "Unobserved outcome", True, False,
+                details={"diagnostic": "x" * 5000})))
+        error = json.loads(result.content[0].text)["error"]
+        self.assertFalse(error["safeToRetry"])
+        self.assertEqual(error["details"]["outcome"], "error_response_not_returned")
+        self.assertEqual(error["details"]["originalErrorCode"], "OUTCOME_UNKNOWN")
+        self.assertNotIn("mutation completed", error["nextActions"][0]["reason"])
 
     def test_next_action_tool_and_arguments_are_validated_against_catalog(self) -> None:
         outcome = ToolOutcome(error=ErrorDetail(

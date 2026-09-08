@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "ce.disassembly",
-  "description": "Read bounded instructions or function metadata around a target address.",
+  "description": "Read bounded instructions or function metadata around a target address. Function recovery is heuristic and may be bounded-incomplete, not an exact function boundary. The opcode field is known unreliable in the current CE mapping and may contain byte text; use display and raw bytes as fallback evidence, not opcode alone.",
   "inputSchema": {
     "type": "object",
     "oneOf": [
@@ -33,7 +33,7 @@
         "properties": {
           "action": {"const": "function"},
           "address": {"type": "string", "minLength": 1, "maxLength": 512},
-          "detail": {"type": "string", "enum": ["summary", "full"]},
+          "detail": {"type": "string", "enum": ["summary", "full"], "description": "Both detail levels describe heuristic function recovery, not exact boundaries; inspect completeness before relying on the extent."},
           "expectedGeneration": {"type": "integer", "minimum": 1}
         },
         "additionalProperties": false

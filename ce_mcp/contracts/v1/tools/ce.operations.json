@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "ce.operations",
-  "description": "Inspect, list, or cancel session-bound long-running CE operations.",
+  "description": "Inspect, list, or cancel session-bound long-running CE operations. Poll get to determine completion before consuming results or refining. After cancel, inspect the returned operation state: completed is not cancelled; cancellation after completion is a no-op, not evidence of active cancellation. Close scan/signature handles with their owning tool.",
   "inputSchema": {
     "type": "object",
     "oneOf": [
       {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {"action": {"const": "get"}, "operationId": {"type": "string", "maxLength": 128}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
       {"type": "object", "required": ["action", "expectedGeneration"], "properties": {"action": {"const": "list"}, "cursor": {"type": "string", "maxLength": 256}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
-      {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {"action": {"const": "cancel"}, "operationId": {"type": "string", "maxLength": 128}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
+      {"type": "object", "required": ["action", "operationId", "expectedGeneration"], "properties": {"action": {"const": "cancel", "description": "Inspect the returned operation state. A completed operation stays completed, not cancelled; do not count this no-op as active cancellation."}, "operationId": {"type": "string", "maxLength": 128}, "expectedGeneration": {"type": "integer", "minimum": 1}}, "additionalProperties": false}
     ]
   },
   "outputSchema": {

@@ -59,11 +59,17 @@ async def verify_stdio(server: Path, temporary: Path) -> None:
             tools = await session.list_tools()
             names = [tool.name for tool in tools.tools]
             assert names == sorted(names) and "ce.status" in names
+            assert all(tool.output_schema is None for tool in tools.tools)
             status = await session.call_tool("ce.status", {})
             assert status.is_error
-            assert status.structured_content["error"]["code"] == "BRIDGE_UNAVAILABLE"
-            assert status.content[0].text.startswith("ce.status failed: BRIDGE_UNAVAILABLE;")
-            assert not status.content[0].text.lstrip().startswith("{")
+            assert status.structured_content is None
+            assert len(status.content) == 1 and status.content[0].type == "text"
+            payload = json.loads(status.content[0].text)
+            assert set(payload) == {"error"}
+            assert payload["error"]["code"] == "BRIDGE_UNAVAILABLE"
+            assert status.content[0].text == json.dumps(
+                payload, ensure_ascii=False, separators=(",", ":")
+            )
 
 
 def verify_http_auth_source(
@@ -154,6 +160,7 @@ def verify_http_auth_source(
         )
         assert list_status == 200
         assert "ce.status" in {tool["name"] for tool in listed["result"]["tools"]}
+        assert all("outputSchema" not in tool for tool in listed["result"]["tools"])
         call_status, called = request_json(
             base + "/mcp",
             token=active_token,
@@ -165,9 +172,13 @@ def verify_http_auth_source(
         assert call_status == 200
         result = called["result"]
         assert result["isError"] is True
-        assert result["structuredContent"]["error"]["code"] == "BRIDGE_UNAVAILABLE"
-        assert result["content"][0]["text"].startswith(
-            "ce.status failed: BRIDGE_UNAVAILABLE;"
+        assert "structuredContent" not in result
+        assert len(result["content"]) == 1 and result["content"][0]["type"] == "text"
+        payload = json.loads(result["content"][0]["text"])
+        assert set(payload) == {"error"}
+        assert payload["error"]["code"] == "BRIDGE_UNAVAILABLE"
+        assert result["content"][0]["text"] == json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":")
         )
         assert len(json.dumps(called).encode("utf-8")) < 1048576
     finally:
