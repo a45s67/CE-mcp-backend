@@ -122,6 +122,55 @@ exit codes, and force semantics.
 
 ## Development
 
+### Local testing with OpenCode
+
+Requires Python 3.10 or newer and uv. Close CE, then run from the repository
+root, replacing the CE path with your installation directory:
+
+```powershell
+uv run --locked ce-mcp-install-bridge --ce-dir "C:\tools\Cheat Engine"
+```
+
+This installs only `autorun\ce_mcp_bridge.lua`. Add `--replace` to explicitly
+overwrite an existing bridge. Start CE afterward and keep it running.
+
+Merge this local MCP entry into your project's `opencode.json` or global
+`~/.config/opencode/opencode.json`, replacing the repository path with your
+absolute checkout path:
+
+```json
+{
+  "mcp": {
+    "cheat-engine": {
+      "type": "local",
+      "command": [
+        "uv",
+        "--directory",
+        "C:\\path\\to\\CE-mcp-backend",
+        "run",
+        "--locked",
+        "ce-mcp-backend",
+        "--transport",
+        "stdio"
+      ],
+      "enabled": true
+    }
+  }
+}
+```
+
+OpenCode launches the stdio server; do not launch a separate stdio process
+manually. This setup needs neither an HTTP token nor `mcp\config.json`.
+Restart OpenCode after updating its configuration and check `opencode mcp list`.
+
+For a bridge-only source test, avoid the release's automatic HTTP startup:
+if both `mcp\server.exe` and `mcp\config.json` exist in the CE directory, the
+Lua bridge launches that server when CE starts. With CE closed, temporarily
+rename `mcp\config.json` before testing stdio, then restore it when returning
+to the release setup.
+
+### Build and verification
+
 Python 3.10 or newer and uv are required:
 
 ```powershell
