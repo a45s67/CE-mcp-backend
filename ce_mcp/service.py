@@ -7,6 +7,8 @@ stays behind the bridge interface.
 
 from __future__ import annotations
 
+import base64
+
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -549,6 +551,13 @@ class BackendService:
                     disabledReasons=disabled, limits=limits,
                 )
                 result["capabilities"] = normalized_capabilities
+        elif name == "ce.memory_read" and arguments.get("mode") == "raw" and arguments.get("encoding") == "base64":
+            if result.get("encoding") == "hex":
+                try:
+                    encoded = base64.b64encode(bytes.fromhex(result["bytes"])).decode("ascii")
+                except (KeyError, ValueError, TypeError) as exc:
+                    raise ContractViolation("raw memory response contained invalid hex bytes") from exc
+                result = {**result, "bytes": encoded, "encoding": "base64"}
         elif name in {
             "ce.process", "ce.disassembly", "ce.symbols", "ce.scan", "ce.operations",
             "ce.pointer", "ce.artifacts", "ce.debug_control", "ce.breakpoints",

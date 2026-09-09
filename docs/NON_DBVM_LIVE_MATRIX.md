@@ -1,5 +1,9 @@
 # Non-DBVM live MCP matrix
 
+This document preserves the initial failure baseline and interface-only mitigation.
+The subsequent native fixes and acceptance are indexed in NATIVE_RELIABILITY_FIXES.md;
+the FAIL/BLOCKED rows below are historical observations, not the current verdict.
+
 ## Scope and evidence
 
 User request (English translation): test everything except DBVM; record potential

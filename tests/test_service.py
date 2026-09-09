@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -105,6 +106,54 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(outcome.error)
         self.assertEqual(self.bridge.calls[-1].method, "memory.read")
         self.assertEqual(self.bridge.calls[-1].session_id, SESSION["sessionId"])
+
+    def test_raw_memory_requested_base64_decodes_to_bridge_hex_bytes(self) -> None:
+        self.attach()
+        self.bridge.register("memory.read", lambda params: bridge_result)
+        for payload, complete in ((bytes(range(256)), True), (b"\x00\xff\x80", False)):
+            with self.subTest(complete=complete):
+                bridge_result = {
+                    "session": SESSION,
+                    "resolvedAddress": {"address": "0x0000000000001234"},
+                    "bytes": payload.hex(), "encoding": "hex", "complete": complete,
+                    "unreadableRanges": [] if complete else [{"address": "0x1237", "size": 1}],
+                }
+                outcome = self.service.call_tool("ce.memory_read", {
+                    "mode": "raw", "address": "0x1234", "size": len(payload) + (not complete),
+                    "encoding": "base64", "expectedGeneration": 7,
+                })
+                self.assertIsNone(outcome.error)
+                assert outcome.result is not None
+                self.assertEqual(base64.b64decode(outcome.result["bytes"], validate=True), payload)
+                self.assertEqual(outcome.result, {
+                    **bridge_result, "bytes": base64.b64encode(payload).decode("ascii"),
+                    "encoding": "base64",
+                })
+                self.assertEqual(bridge_result["encoding"], "hex")
+                self.assertEqual(bridge_result["bytes"], payload.hex())
+                self.assertEqual(self.bridge.calls[-1].method, "memory.read")
+                self.assertEqual(self.bridge.calls[-1].session_id, SESSION["sessionId"])
+
+    def test_raw_memory_base64_invalid_bridge_hex_is_contract_violation(self) -> None:
+        self.attach()
+        self.bridge.register("memory.read", lambda params: {
+            "session": SESSION, "resolvedAddress": {"address": "0x1234"},
+            "encoding": "hex", "complete": True, **fields,
+        })
+        for fields in ({"bytes": "GG"}, {"bytes": "0"}, {"bytes": "00xz"},
+                       {"bytes": None}, {"bytes": 42}, {}):
+            with self.subTest(fields=fields):
+                before = len(self.bridge.calls)
+                outcome = self.service.call_tool("ce.memory_read", {
+                    "mode": "raw", "address": "0x1234", "size": 4,
+                    "encoding": "base64", "expectedGeneration": 7,
+                })
+                self.assertIsNone(outcome.result)
+                assert outcome.error is not None
+                self.assertEqual(outcome.error.code, "BACKEND_CONTRACT_VIOLATION")
+                self.assertIn("invalid hex", outcome.error.message)
+                self.assertFalse(outcome.error.safe_to_retry)
+                self.assertEqual(len(self.bridge.calls), before + 1)
 
     def test_read_without_target_and_stale_generation_are_preflight_errors(self) -> None:
         no_target = self.service.call_tool(

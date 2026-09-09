@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "name": "ce.debug_events",
-  "description": "Page recorded debugger events for the current target generation. Events do not prove a sustained native stop; repeated hits were observed while reported paused. Cursor continuity under rolling-buffer rollover is unverified and events may be missed. Do not infer safe stepping or a complete execution history from successful pages.",
+  "description": "Page debugger events using generation-bound event-sequence cursors. Reuse nextCursor even when truncated is false to poll for new events. droppedEvents reports a retention gap after the requested cursor; a rolling buffer is not a complete execution history. Events alone do not prove the target is still stopped; inspect current debugger status before using stopGeneration.",
   "inputSchema": {"type": "object", "oneOf": [
     {"type": "object", "required": ["action", "expectedGeneration"], "properties": {
-      "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^[0-9]{1,10}$", "description": "Use nextCursor for paging, but continuity under rolling-buffer rollover is unverified; a page sequence may miss events."},
+      "action": {"const": "list"}, "cursor": {"type": "string", "pattern": "^dbg-[0-9a-f]{8}-[0-9a-f]{8}$", "description": "Use nextCursor unchanged, not a numeric ring index. It identifies the last delivered event in this generation; inspect droppedEvents for a rollover gap."},
       "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "expectedGeneration": {"type": "integer", "minimum": 1}
     }, "additionalProperties": false}
   ]},
   "outputSchema": {"type": "object", "required": ["action", "session", "items", "truncated"], "properties": {
     "action": {"const": "list"}, "session": {"type": "object"},
     "items": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
-    "nextCursor": {"type": "string"}, "truncated": {"type": "boolean"}
+    "nextCursor": {"type": "string"}, "truncated": {"type": "boolean"}, "droppedEvents": {"type": "integer", "minimum": 0}
   }, "additionalProperties": false},
   "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
 }

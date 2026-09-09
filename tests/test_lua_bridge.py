@@ -9,6 +9,7 @@ from ce_mcp.service import BackendService
 ROOT = Path(__file__).resolve().parents[1]
 LUA_DLL = next(
     (path for path in (
+        Path(r"C:\Program Files\Cheat Engine\lua53-64.dll"),
         Path(r"C:\tools\Cheat Engine\lua53-64.dll"),
         Path(r"C:\tools\CE\lua53-64.dll"),
     ) if path.exists()),
@@ -134,17 +135,16 @@ class LuaBridgeTests(unittest.TestCase):
         self.assertIn("previousOnBreakpoint", cleanup)
         self.assertIn("pcall(unpause)", cleanup)
 
-    def test_step_uses_bounded_temporary_hardware_breakpoints(self) -> None:
+    def test_step_uses_native_continue_modes(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")
-        helper = source[source.index("local function clearStepBreakpoints"):source.index('handlers["debug.control.continue"]')]
-        self.assertIn("createDisassembler()", helper)
-        self.assertIn("data.isConditionalJump", helper)
-        self.assertIn("occupied + #targets > 4", helper)
-        self.assertIn("recordDebugStop(\"step\", nil)", helper)
         handler = source[source.index('handlers["debug.control.continue"]'):source.index('handlers["debug.control.detach"]')]
-        self.assertLess(handler.index("prepareHardwareStep(mode)"), handler.index("debug_continueFromBreakpoint"))
+        self.assertIn("step_into = co_stepinto", handler)
+        self.assertIn("step_over = co_stepover", handler)
+        self.assertIn("pcall(debug_continueFromBreakpoint, nativeMode)", handler)
+        self.assertNotIn("prepareHardwareStep", source)
+        self.assertNotIn("debug_setBreakpoint", handler)
         cleanup = source[source.index("local function cleanupDebugger"):source.index("local function cleanupHypervisor")]
-        self.assertIn("stepAddresses", cleanup)
+        self.assertIn("pendingStep = nil", cleanup)
 
     def test_dbvm_start_uses_optional_readiness_then_physical_gate_without_implicit_load(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")

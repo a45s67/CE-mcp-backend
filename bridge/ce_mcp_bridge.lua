@@ -59,7 +59,7 @@ local state = {
     active = false, stopped = false, stopGeneration = 0,
     eventCounter = 0, events = {}, breakpoints = {}, breakpointCounter = 0,
     previousOnBreakpoint = nil, callbackInstalled = false,
-    stepAddresses = {}, processSuspended = false,
+    processSuspended = false,
   },
   hypervisor = { watches = {}, watchCounter = 0, trace = nil, traceCounter = 0 },
   diagnostic = "startup",
@@ -101,8 +101,7 @@ local function cleanupDebugger()
   local debugState = state.debug
   if debugState.callbackInstalled then _G.debugger_onBreakpoint = debugState.previousOnBreakpoint end
   debugState.callbackInstalled = false
-  for _, address in ipairs(debugState.stepAddresses) do pcall(debug_removeBreakpoint, address) end
-  debugState.stepAddresses = {}
+  debugState.pendingStep = nil
   debugState.previousOnBreakpoint = nil
   for _, breakpoint in pairs(debugState.breakpoints) do
     pcall(debug_removeBreakpoint, breakpoint.address)
@@ -333,15 +332,28 @@ local function refreshTarget(forceGeneration)
     cleanupOperations()
     cleanupHypervisor()
     state.generation = state.generation + 1
+    state.debug.eventCounter = 0
     state.pid = pid
     state.sessionId = pid > 0 and string.format("ce-%08x-%08x", pid, state.generation) or nil
   end
   return pid
 end
 
+local function refreshDebugState()
+  local ok, active = pcall(debug_isDebugging)
+  state.debug.active = ok and active == true
+  if state.debug.processSuspended then return end
+  -- Callback globals can outlive their stop. CE 7.7's literal context result
+  -- verifies a waiting debugger thread; debug_isBroken has an invalid binding.
+  local contextOk, context = false, false
+  if state.debug.active then contextOk, context = pcall(debug_getContext, false) end
+  state.debug.stopped = state.debug.active and contextOk and context == true
+end
+
 local function session()
   local pid = refreshTarget(false)
   if pid == 0 or state.logicalDetached then return nil end
+  refreshDebugState()
   local width = pointerWidth()
   return {
     sessionId = state.sessionId,
@@ -404,7 +416,8 @@ handlers["status.get"] = function(_)
   disabledReasons["dbvm.watch"] = watchApi and hypervisorReason or "DBVM watch API is unavailable"
   disabledReasons["dbvm.trace"] = traceApi and hypervisorReason or "DBVM trace API is unavailable"
   local result = {
-    bridge = { connected = true, version = BRIDGE_VERSION, diagnostic = state.diagnostic,
+    bridge = { connected = true, version = BRIDGE_VERSION,
+      diagnostic = state.diagnostic .. (state.mapDiagnostic and "; memory.map=" .. state.mapDiagnostic or ""),
       dbvmReadiness = readiness },
     capabilities = {
       available = {
@@ -519,6 +532,7 @@ handlers["process.detach"] = function(_)
   cleanupDebugger()
   cleanupOperations()
   state.generation = state.generation + 1
+  state.debug.eventCounter = 0
   state.sessionId = nil
   state.diagnostic = "logical-detach:ce-handle-retained"
   return { detached = true, ceHandleRetained = true }
@@ -572,16 +586,29 @@ handlers["memory.read"] = function(params)
   local width = widths[dataType]
   if dataType == "string" or dataType == "wstring" then
     local maxBytes = math.max(1, math.min(tonumber(params.maxStringBytes) or 256, 65536))
-    local value = readString(address, maxBytes, dataType == "wstring")
-    if value == nil then return errorDetail("ACCESS_DENIED", "Target string could not be read", true, true) end
+    local unit = dataType == "wstring" and 2 or 1
+    local bytes, complete, unreadable = {}, false, {}
+    -- Native readString has an off-by-one bound and can decode an odd UTF-16
+    -- byte count. Read complete code units and never probe past maxStringBytes.
+    for offset = 0, maxBytes - unit, unit do
+      local part = readBytes(address + offset, unit, true)
+      if not part or #part ~= unit then
+        if #bytes == 0 then return errorDetail("ACCESS_DENIED", "Target string could not be read", true, true) end
+        unreadable[1] = { address = formatAddress(address + offset), size = unit }
+        break
+      end
+      if part[1] == 0 and (unit == 1 or part[2] == 0) then complete = true; break end
+      for _, byte in ipairs(part) do bytes[#bytes + 1] = byte end
+    end
+    local value = unit == 2 and byteTableToWideString(bytes) or byteTableToString(bytes)
     return {
       session = session(),
       resolvedAddress = { address = formatAddress(address), pointerWidth = pointerWidth() },
       pointerPath = pointerPath,
       dataType = dataType,
       value = value,
-      complete = true,
-      unreadableRanges = {},
+      complete = complete,
+      unreadableRanges = unreadable,
     }
   end
   if not width then return errorDetail("INVALID_PARAMS", "Unsupported dataType", true, true) end
@@ -807,47 +834,101 @@ end
 handlers["memory.map"] = function(params)
   local missing = requireTarget()
   if missing then return missing end
-  local ok, regions = pcall(enumMemoryRegions)
-  if not ok or not regions then
-    return errorDetail("CE_API_UNAVAILABLE", "enumMemoryRegions failed", true, true)
-  end
   local items = {}
   local moduleFilter = params.moduleFilter and tostring(params.moduleFilter):lower() or nil
-  for _, region in ipairs(regions) do
-    local base = region.BaseAddress or 0
-    local stateName = regionState(region.State or 0)
-    local typeName = regionType(region.Type or 0)
-    local protection = regionProtection(region.Protect or 0)
-    local symbol = getNameFromAddress(base, true, false, false) or formatAddress(base)
-    local matches = (not moduleFilter or symbol:lower():find(moduleFilter, 1, true))
-      and (not params.stateFilter or params.stateFilter == stateName)
-      and (not params.typeFilter or params.typeFilter == typeName)
-      and (not params.protectionFilter or params.protectionFilter == protection)
-    if matches then
-      items[#items + 1] = {
-        base = { address = formatAddress(base), pointerWidth = pointerWidth() },
-        allocationBase = {
-          address = formatAddress(region.AllocationBase or 0),
-          pointerWidth = pointerWidth(),
-        },
-        size = region.RegionSize or 0,
-        state = stateName,
-        type = typeName,
-        protection = protection,
-        protectionValue = string.format("0x%X", region.Protect or 0),
-        name = symbol,
-      }
+  local ranges = {}
+  if moduleFilter then
+    state.mapDiagnostic = "enumerating-modules"
+    local moduleOk, listed = pcall(enumModules, getOpenedProcessID())
+    if not moduleOk or type(listed) ~= "table" then
+      return errorDetail("CE_API_UNAVAILABLE", "Module enumeration failed", true, true)
     end
+    for _, module in ipairs(listed) do
+      if tostring(module.Name):lower():find(moduleFilter, 1, true) and module.Size > 0 then
+        ranges[#ranges + 1] = { first = module.Address, last = module.Address + module.Size }
+      end
+    end
+    table.sort(ranges, function(a, b) return a.first < b.first end)
+    local merged = {}
+    for _, range in ipairs(ranges) do
+      local previous = merged[#merged]
+      if previous and range.first <= previous.last then
+        previous.last = math.max(previous.last, range.last)
+      else
+        merged[#merged + 1] = range
+      end
+    end
+    ranges = merged
+  else
+    ranges[1] = { first = 0, last = pointerWidth() == 32 and 0x100000000 or math.maxinteger }
   end
-  local result = page(items, params.cursor, params.limit)
+  local offset = math.max(0, tonumber(params.cursor or "0") or 0)
+  local limit = math.max(1, math.min(tonumber(params.limit) or 100, 200))
+  local matched, more, queries = 0, false, 0
+  for _, range in ipairs(ranges) do
+    local current = range.first
+    while current < range.last do
+      queries = queries + 1
+      if queries > 8192 then
+        return errorDetail("LIMIT_EXCEEDED", "Memory map query budget exceeded; narrow moduleFilter or cursor", true, false)
+      end
+      state.mapDiagnostic = "query:" .. tostring(queries)
+      local ok, region = pcall(getMemoryRegionInfo, current)
+      if not ok then return errorDetail("CE_API_UNAVAILABLE", "getMemoryRegionInfo failed", true, true) end
+      if not region then break end
+      if type(region) ~= "table" or type(region.BaseAddress) ~= "number"
+        or type(region.RegionSize) ~= "number" or region.RegionSize <= 0 then
+        return errorDetail("CE_API_UNAVAILABLE", "Invalid memory region metadata", false, false)
+      end
+      local base = region.BaseAddress or 0
+      local nextAddress = base + region.RegionSize
+      if nextAddress <= current then
+        return errorDetail("CE_API_UNAVAILABLE", "Memory region query did not advance", false, false)
+      end
+      current = nextAddress
+      local stateName = regionState(region.State or 0)
+      local typeName = regionType(region.Type or 0)
+      local protection = regionProtection(region.Protect or 0)
+      local matches = base >= range.first and (not params.stateFilter or params.stateFilter == stateName)
+        and (not params.typeFilter or params.typeFilter == typeName)
+        and (not params.protectionFilter or params.protectionFilter == protection)
+      if matches then
+        matched = matched + 1
+        if matched > offset + limit then more = true; break end
+        if matched > offset then
+          -- Query and resolve only enough regions for this page plus one lookahead.
+          state.mapDiagnostic = "naming:" .. tostring(#items + 1)
+          local symbol = getNameFromAddress(base, true, false, false) or formatAddress(base)
+          items[#items + 1] = {
+            base = { address = formatAddress(base), pointerWidth = pointerWidth() },
+            allocationBase = {
+              address = formatAddress(region.AllocationBase or 0),
+              pointerWidth = pointerWidth(),
+            },
+            size = region.RegionSize or 0,
+            state = stateName,
+            type = typeName,
+            protection = protection,
+            protectionValue = string.format("0x%X", region.Protect or 0),
+            name = symbol,
+          }
+        end
+      end
+    end
+    if more then break end
+  end
+  local result = { items = items, truncated = more }
+  if more then result.nextCursor = tostring(offset + #items) end
   result.session = session()
+  state.mapDiagnostic = "complete:" .. tostring(#items)
   return result
 end
 
 local function instructionAt(address)
   local ok, text = pcall(disassemble, address)
   if not ok or not text then return nil end
-  local addressText, bytesText, opcode, extra = splitDisassembledString(text)
+  -- CE 7.7 native probe confirms Lua push order, contrary to celua.txt.
+  local extra, opcode, bytesText, addressText = splitDisassembledString(text)
   local size = getInstructionSize(address) or 1
   local raw = readBytes(address, size, true) or {}
   local bytes = {}
@@ -866,14 +947,18 @@ local function instructionAt(address)
   }
 end
 
-local function instructionList(startAddress, count)
+local function instructionList(startAddress, count, byteLimit, stopAtReturn)
   local items = {}
-  local current = startAddress
+  local current, consumed = startAddress, 0
   for _ = 1, math.max(1, math.min(count or 32, 500)) do
+    if byteLimit and consumed >= byteLimit then break end
     local instruction = instructionAt(current)
     if not instruction then break end
+    if byteLimit and consumed + instruction.size > byteLimit then break end
     items[#items + 1] = instruction
+    consumed = consumed + instruction.size
     current = current + instruction.size
+    if stopAtReturn and tostring(instruction.opcode):lower():match("^%s*ret") then break end
   end
   return items
 end
@@ -900,15 +985,8 @@ handlers["disassembly.list"] = function(params)
   local address = resolveAddress(params.address)
   if not address then return errorDetail("ADDRESS_UNRESOLVED", "Address could not be resolved", true, true) end
   local count = tonumber(params.instructionCount) or 32
-  local items = instructionList(address, count)
   local byteLimit = tonumber(params.byteLimit) or 65536
-  local bounded, consumed = {}, 0
-  for _, instruction in ipairs(items) do
-    if consumed + instruction.size > byteLimit then break end
-    bounded[#bounded + 1] = instruction
-    consumed = consumed + instruction.size
-  end
-  items = bounded
+  local items = instructionList(address, count, byteLimit)
   return { session = session(), items = items, truncated = #items < count }
 end
 
@@ -949,13 +1027,13 @@ handlers["disassembly.function"] = function(params)
   if missing then return missing end
   local address = resolveAddress(params.address)
   if not address then return errorDetail("ADDRESS_UNRESOLVED", "Address could not be resolved", true, true) end
-  local items = instructionList(address, params.detail == "full" and 500 or 100)
+  local items = instructionList(address, params.detail == "full" and 500 or 100, nil, true)
   local stoppedAtReturn = false
   local retained = {}
   for _, instruction in ipairs(items) do
     retained[#retained + 1] = instruction
     local opcode = tostring(instruction.opcode):lower()
-    if opcode:match("^ret") then stoppedAtReturn = true; break end
+    if opcode:match("^%s*ret") then stoppedAtReturn = true; break end
   end
   local endAddress = { address = formatAddress(address), pointerWidth = pointerWidth() }
   if #retained > 0 then
@@ -1012,11 +1090,14 @@ handlers["symbols.modules"] = function(params)
   if missing then return missing end
   local ok, modules = pcall(enumModules, getOpenedProcessID())
   if not ok or not modules then return errorDetail("CE_API_UNAVAILABLE", "Module enumeration failed", true, true) end
-  local items = {}
+  local items, seen = {}, {}
   local filter = params.nameFilter and tostring(params.nameFilter):lower() or nil
   for _, module in ipairs(modules) do
     local name = module.Name or "unknown"
-    if not filter or name:lower():find(filter, 1, true) then
+    local key = table.concat({tostring(module.Address or 0), tostring(module.Size or 0),
+      tostring(module.Is64Bit), name, module.PathToFile or ""}, "\0")
+    if not seen[key] and (not filter or name:lower():find(filter, 1, true)) then
+      seen[key] = true
       items[#items + 1] = {
         name = name,
         base = { address = formatAddress(module.Address or 0), pointerWidth = pointerWidth() },
@@ -1070,8 +1151,7 @@ handlers["symbols.list"] = function(params)
 end
 
 local function debugSummary()
-  local ok, active = pcall(debug_isDebugging)
-  state.debug.active = ok and active == true
+  refreshDebugState()
   return {
     active = state.debug.active,
     interface = state.debug.active and "windows" or "none",
@@ -1087,6 +1167,7 @@ local function debugSummary()
 end
 
 local function requireDebuggerStopped(expectedStopGeneration)
+  refreshDebugState()
   if not state.debug.active then
     return errorDetail("DEBUGGER_NOT_ACTIVE", "Windows debugger is not active", true, true)
   end
@@ -1120,10 +1201,13 @@ local function installDebuggerCallback()
   if debugState.callbackInstalled then return end
   debugState.previousOnBreakpoint = rawget(_G, "debugger_onBreakpoint")
   _G.debugger_onBreakpoint = function()
+    -- Record every callback arrival even when a preexisting callback handles
+    -- continuation. Fresh native context checks decide whether it remains stopped.
+    recordDebugStop(debugState.pendingStep and "step" or "external_break", nil)
+    debugState.pendingStep = nil
     if type(debugState.previousOnBreakpoint) == "function" then
       return debugState.previousOnBreakpoint()
     end
-    recordDebugStop("external_break", nil)
     return 0
   end
   debugState.callbackInstalled = true
@@ -1164,63 +1248,6 @@ handlers["debug.control.pause"] = function(params)
   return { session = session(), debugger = debugSummary(), pauseRequested = true }
 end
 
-local function clearStepBreakpoints()
-  for _, address in ipairs(state.debug.stepAddresses) do pcall(debug_removeBreakpoint, address) end
-  state.debug.stepAddresses = {}
-end
-
-local function prepareHardwareStep(mode)
-  local instructionPointer = RIP or EIP
-  if not instructionPointer then return errorDetail("CONTEXT_UNAVAILABLE", "Stopped instruction pointer is unavailable", true, true) end
-  local disassembler = createDisassembler()
-  local ok, _ = pcall(function() disassembler.disassemble(instructionPointer) end)
-  local data = ok and disassembler.getLastDisassembleData() or nil
-  pcall(function() disassembler.destroy() end)
-  if type(data) ~= "table" or type(data.bytes) ~= "table" or #data.bytes < 1 then
-    return errorDetail("CE_API_UNAVAILABLE", "Current instruction could not be decoded for stepping", true, true)
-  end
-  local nextAddress = instructionPointer + #data.bytes
-  local targets, seen = {}, {}
-  local function addTarget(address)
-    if type(address) == "number" and address > 0 and not seen[address] then
-      seen[address], targets[#targets + 1] = true, address
-    end
-  end
-  if data.isRet then
-    local stackPointer = RSP or ESP
-    local read = pointerWidth() == 64 and readQword or readInteger
-    local readOk, target = pcall(read, stackPointer)
-    if readOk then addTarget(target) end
-  elseif data.isConditionalJump then
-    addTarget(data.parameterValue)
-    addTarget(nextAddress)
-  elseif data.isCall then
-    addTarget(mode == "step_into" and data.parameterValue or nextAddress)
-  elseif data.isJump then
-    addTarget(data.parameterValue)
-  else
-    addTarget(nextAddress)
-  end
-  if #targets == 0 then return errorDetail("ADDRESS_UNRESOLVED", "Step destination could not be resolved", true, true) end
-  local occupied = 0
-  for _ in pairs(state.debug.breakpoints) do occupied = occupied + 1 end
-  if occupied + #targets > 4 then return errorDetail("BREAKPOINT_LIMIT", "Insufficient hardware slots for bounded step", true, true) end
-  local function onStep()
-    clearStepBreakpoints()
-    recordDebugStop("step", nil)
-    return 0
-  end
-  for _, target in ipairs(targets) do
-    local installed, installResult = pcall(debug_setBreakpoint, target, 1, bptExecute, bpmDebugRegister, onStep)
-    if not installed or installResult == false then
-      clearStepBreakpoints()
-      return errorDetail("CE_API_UNAVAILABLE", "Temporary step breakpoint install failed", true, false)
-    end
-    state.debug.stepAddresses[#state.debug.stepAddresses + 1] = target
-  end
-  return nil
-end
-
 handlers["debug.control.continue"] = function(params)
   local failure = requireDebuggerStopped(params.expectedStopGeneration)
   if failure then return failure end
@@ -1234,13 +1261,11 @@ handlers["debug.control.continue"] = function(params)
     state.debug.stopped = false
     return { session = session(), debugger = debugSummary() }
   end
-  if mode ~= "run" then
-    local stepFailure = prepareHardwareStep(mode)
-    if stepFailure then return stepFailure end
-  end
-  local called, result = pcall(debug_continueFromBreakpoint, co_run)
+  local nativeMode = ({ run = co_run, step_into = co_stepinto, step_over = co_stepover })[mode]
+  state.debug.pendingStep = mode ~= "run" and mode or nil
+  local called, result = pcall(debug_continueFromBreakpoint, nativeMode)
   if not called or result == false then
-    clearStepBreakpoints()
+    state.debug.pendingStep = nil
     return errorDetail("CE_API_UNAVAILABLE", "debug continue failed: " .. tostring(result), true, false)
   end
   state.debug.stopped = false
@@ -1309,7 +1334,8 @@ handlers["debug.breakpoints.set"] = function(params)
       }
       state.debug.events[#state.debug.events + 1] = event
       if #state.debug.events > 256 then table.remove(state.debug.events, 1) end
-      return 0
+      -- Per-breakpoint callbacks use the inverse of the global callback contract.
+      return 1
     end
   )
   if not installed or installResult == false then
@@ -1328,7 +1354,30 @@ handlers["debug.breakpoints.remove"] = function(params)
 end
 
 handlers["debug.events.list"] = function(params)
-  local result = page(state.debug.events, params.cursor, params.limit)
+  local after = 0
+  if params.cursor then
+    local generation, sequence = tostring(params.cursor):match("^dbg%-(%x%x%x%x%x%x%x%x)%-(%x%x%x%x%x%x%x%x)$")
+    if not generation or tonumber(generation, 16) ~= state.generation then
+      return errorDetail("INVALID_CURSOR", "Use an event cursor from this target generation", true, false)
+    end
+    after = tonumber(sequence, 16)
+    if after > state.debug.eventCounter then
+      return errorDetail("INVALID_CURSOR", "Event cursor is beyond the recorded sequence", true, false)
+    end
+  end
+  local limit = math.max(1, math.min(tonumber(params.limit) or 100, 200))
+  local result = { items = {}, truncated = false, droppedEvents = 0 }
+  for _, event in ipairs(state.debug.events) do
+    local sequence = tonumber(event.eventId:sub(-8), 16)
+    if sequence > after then
+      if #result.items == 0 then result.droppedEvents = math.max(0, sequence - after - 1) end
+      if #result.items == limit then result.truncated = true; break end
+      result.items[#result.items + 1] = event
+    end
+  end
+  -- Sequence cursors survive ring-buffer rollover; indices into the ring do not.
+  result.nextCursor = #result.items > 0 and result.items[#result.items].eventId or params.cursor
+    or string.format("dbg-%08x-%08x", state.generation, state.debug.eventCounter)
   result.session = session()
   return result
 end
@@ -1365,11 +1414,11 @@ end
 handlers["debug.registers.read"] = function(params)
   local failure = requireDebuggerStopped(params.expectedStopGeneration)
   if failure then return failure end
+  if state.debug.processSuspended then
+    return errorDetail("CONTEXT_UNAVAILABLE", "Process suspension does not supply a debugger thread context", true, false)
+  end
   local contextOk, contextResult = pcall(debug_getContext, params.includeVectors == true)
-  -- CE 7.5 documents no return value for debug_getContext and can return false
-  -- even after populating the register globals. An exception or missing IP is
-  -- the failure signal; the undocumented boolean is not.
-  if not contextOk then
+  if not contextOk or contextResult ~= true then
     return errorDetail("CE_API_UNAVAILABLE", "debug_getContext failed: " .. tostring(contextResult), true, false)
   end
   local width = pointerWidth()
@@ -2289,13 +2338,16 @@ local function worker(thread)
           end
         end)
         local responseLength = #response
+        local isMap = payload:find('"memory.map"', 1, true) ~= nil
+        if isMap then state.mapDiagnostic = "encoded:" .. tostring(responseLength) end
         pipe.writeBytes({
           responseLength % 256,
           math.floor(responseLength / 256) % 256,
           math.floor(responseLength / 65536) % 256,
           math.floor(responseLength / 16777216) % 256,
         })
-        pipe.writeString(response)
+        local written = pipe.writeString(response)
+        if isMap then state.mapDiagnostic = "written:" .. tostring(written) .. "/" .. tostring(responseLength) end
       end
       -- Operation handles belong to the sidecar connection. Never allow a
       -- disconnected client to leave MemScan/FoundList workers behind or to

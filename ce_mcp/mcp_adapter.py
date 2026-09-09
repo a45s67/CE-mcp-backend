@@ -242,8 +242,8 @@ def create_mcp_server(service: BackendService) -> Server:
             "enabled the separate hypervisor policy explicitly. "
             "Tool results are complete bounded JSON objects in one text block; no structuredContent "
             "is required. A successful call is not proof of complete data or completed cancellation. "
-            "Current native debugger stop/context claims failed live verification: do not use "
-            "start, pause, continue or register snapshots for debugging until reverified. "
+            "Debugger status and context guards require a current native waiting context, not "
+            "an old callback snapshot. Process suspension permits run only, not registers or stepping. "
             "Keep status and owned-resource cleanup available. If a read loses the bridge, stop "
             "the sequence and reconcile status rather than issuing a parallel retry batch."
         ),

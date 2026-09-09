@@ -27,6 +27,25 @@ the current release; it does not describe planned APIs.
 Addresses are canonical hexadecimal strings. Target pointer width and
 architecture come from the attached session.
 
+Native reliability updates and their reproducible acceptance are indexed in
+`docs/NATIVE_RELIABILITY_FIXES.md`:
+
+- Debugger status/context use the current native waiting context, not cached
+  register globals. Process suspension supplies no register context and permits
+  only run/unpause. Breakpoint removal releases the logical handle; native list
+  deletion may be deferred until after resume. Do not repeat removal for that reason.
+- Debug events now use generation-bound sequence cursors rather than numeric ring
+  indices. Discard old cursors when upgrading the bridge. Reuse `nextCursor` even
+  on an empty tail, and inspect `droppedEvents` for a retention gap.
+- Memory maps use single-region queries over matching module ranges, name only
+  returned rows, and stop at page lookahead or an 8192-query budget. A single native
+  query may still block. CE's selected query backend controls metadata semantics.
+- `maxStringBytes` includes the terminator budget; wide strings read whole 2-byte
+  units. `complete` is true only after observing a terminator within that budget.
+  Raw `encoding=base64` is converted from bridge hex by the sidecar.
+- Function disassembly stops at the first return or its read/count bound; this is
+  heuristic recovery, not an exact function/CFG boundary.
+
 ## Public tools
 
 | Tool | Actions or purpose |
