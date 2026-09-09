@@ -1,8 +1,7 @@
 """Execute extracted bridge code, not CE or its autorun/pipe lifecycle.
 
 These are mocked Lua-runtime regressions, not native debugger verification.
-The split fixture follows ce-native-disasm-01/native.jsonl (2026-09-09);
-docs/NON_DBVM_LIVE_MATRIX.md records the original reliability failures.
+Native API checks are provided separately by bridge/probes/reliability_probe.lua.
 """
 
 import ctypes

@@ -27,14 +27,13 @@ the current release; it does not describe planned APIs.
 Addresses are canonical hexadecimal strings. Target pointer width and
 architecture come from the attached session.
 
-Native reliability updates and their reproducible acceptance are indexed in
-`docs/NATIVE_RELIABILITY_FIXES.md`:
+## Query semantics
 
 - Debugger status/context use the current native waiting context, not cached
   register globals. Process suspension supplies no register context and permits
   only run/unpause. Breakpoint removal releases the logical handle; native list
   deletion may be deferred until after resume. Do not repeat removal for that reason.
-- Debug events now use generation-bound sequence cursors rather than numeric ring
+- Debug events use generation-bound sequence cursors rather than numeric ring
   indices. Discard old cursors when upgrading the bridge. Reuse `nextCursor` even
   on an empty tail, and inspect `droppedEvents` for a retention gap.
 - Memory maps use single-region queries over matching module ranges, name only

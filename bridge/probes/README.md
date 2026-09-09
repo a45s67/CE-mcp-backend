@@ -23,7 +23,3 @@ a minimal runtime and sole autorun, starts a finite owned target, enforces a tim
 and records process cleanup. Modes `bridge`, `bridge-debug`, and `bridge-data` test
 the source bridge/service path; other modes isolate the native APIs first. Use
 `--step into` or `--step over` with `--mode breakpoint-1` for native stepping.
-
-The old debugger_lifecycle_probe.lua was removed: it overwrote the first-hit value,
-used the wrong per-breakpoint callback return, and could falsely pass cached context.
-See `docs/NATIVE_RELIABILITY_FIXES.md` for exact evidence and remaining coverage limits.
