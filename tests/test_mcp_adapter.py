@@ -88,6 +88,33 @@ class McpAdapterTests(unittest.TestCase):
         self.assertEqual(action["execution"], "suggested")
         self.assertEqual(error["adviceSource"], "ce-mcp-backend")
 
+    def test_output_limit_can_shrink_artifact_preview(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        result = _bounded_result(
+            service,
+            "ce.artifacts",
+            {"action": "preview", "artifactId": "art-" + "a" * 32, "size": 4096},
+            ToolOutcome(result={"bytes": "AA" * 4096}),
+        )
+        error = json.loads(result.content[0].text)["error"]
+        self.assertTrue(error["safeToRetry"])
+        self.assertEqual(error["nextActions"][0]["argumentsPatch"], {"size": 2048})
+
+    def test_output_limit_does_not_recommend_replaying_artifact_mutations(self) -> None:
+        service = BackendService(self.bridge, TOOL_DIR, max_output_bytes=4096)
+        for arguments in (
+            {"action": "memory_dump", "address": "0x1000", "size": 1, "expectedGeneration": 1},
+            {"action": "delete", "artifactId": "art-" + "a" * 32},
+        ):
+            with self.subTest(action=arguments["action"]):
+                result = _bounded_result(
+                    service, "ce.artifacts", arguments,
+                    ToolOutcome(result={"value": "x" * 5000}),
+                )
+                error = json.loads(result.content[0].text)["error"]
+                self.assertFalse(error["safeToRetry"])
+                self.assertEqual(error["nextActions"][0]["tool"], "ce.status")
+
     def test_target_generation_and_memory_bytes_are_visible_in_text(self) -> None:
         session = {
             "sessionId": "ce-01jabcdef", "generation": 7, "state": "running",

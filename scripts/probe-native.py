@@ -107,7 +107,7 @@ def main():
     parser.add_argument("--target", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--ce-dir", type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--mode", choices=["bridge", "bridge-data", "bridge-debug", "disassembly", "memory-map", "breakpoint-0",
+    parser.add_argument("--mode", choices=["bridge", "bridge-data", "bridge-debug", "mcp-live", "disassembly", "memory-map", "breakpoint-0",
                                          "breakpoint-1", "breakpoint-none"])
     parser.add_argument("--step", choices=["into", "over"])
     parser.add_argument("--target-pid", type=int, help="Read-only memory-map probe of an authorized existing target")
@@ -127,7 +127,7 @@ def main():
         parser.error("output must be new, beneath var/, with an existing parent")
     source = args.ce_dir.resolve()
     root = Path(__file__).resolve().parents[1]
-    bridge_mode = args.mode in {"bridge", "bridge-data", "bridge-debug"}
+    bridge_mode = args.mode in {"bridge", "bridge-data", "bridge-debug", "mcp-live"}
     probe = root / ("bridge/ce_mcp_bridge.lua" if bridge_mode else "bridge/probes/reliability_probe.lua")
     files = ["cheatengine-x86_64-SSE4-AVX2.exe", "lua53-64.dll", "defines.lua", "main.lua"]
     for name in files:
@@ -181,10 +181,18 @@ def main():
             (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             if bridge_mode:
                 time.sleep(2)
-                checked = subprocess.run([sys.executable, str(root / "scripts/probe-bridge.py"),
-                    "--manifest", str(output / "manifest.json")], timeout=150 if args.mode == "bridge-data" else 30,
-                    capture_output=True, text=True)
-                (output / "bridge-output.txt").write_text(checked.stdout + checked.stderr, encoding="utf-8")
+                if args.mode == "mcp-live":
+                    command = [sys.executable, "-m", "ce_mcp.mcp_live_smoke",
+                               "--target-pid", str(info["pid"]), "--ce-pid", str(ce.pid)]
+                    result_name = "mcp-output.txt"
+                    timeout = 45
+                else:
+                    command = [sys.executable, str(root / "scripts/probe-bridge.py"),
+                               "--manifest", str(output / "manifest.json")]
+                    result_name = "bridge-output.txt"
+                    timeout = 150 if args.mode == "bridge-data" else 30
+                checked = subprocess.run(command, timeout=timeout, capture_output=True, text=True)
+                (output / result_name).write_text(checked.stdout + checked.stderr, encoding="utf-8")
                 report["success"] = checked.returncode == 0
             else:
                 try:

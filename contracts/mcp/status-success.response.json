@@ -4,7 +4,7 @@
   "result": {
     "content": [
       {
-        "text": "{\"backend\":{\"version\":\"0.2.0\",\"protocolVersion\":1},\"bridge\":{\"connected\":true,\"version\":\"0.1.0\"},\"capabilities\":{\"available\":[\"artifacts.memory_dump\",\"artifacts.metadata\",\"artifacts.preview\"],\"enabled\":[],\"disabledReasons\":{\"artifacts.memory_dump\":\"artifact store is not configured\",\"artifacts.metadata\":\"artifact store is not configured\",\"artifacts.preview\":\"artifact store is not configured\"},\"limits\":{\"maxOutputBytes\":1048576}}}",
+        "text": "{\"backend\":{\"version\":\"0.2.0\",\"protocolVersion\":1},\"cheatEngine\":{\"version\":\"unknown\"},\"bridge\":{\"connected\":true,\"version\":\"0.1.0\"},\"capabilities\":{\"available\":[\"artifacts.memory_dump\",\"artifacts.metadata\",\"artifacts.preview\"],\"enabled\":[],\"disabledReasons\":{\"artifacts.memory_dump\":\"artifact store is not configured\",\"artifacts.metadata\":\"artifact store is not configured\",\"artifacts.preview\":\"artifact store is not configured\"},\"limits\":{\"maxOutputBytes\":1048576}}}",
         "type": "text"
       }
     ],

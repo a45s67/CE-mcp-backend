@@ -78,10 +78,19 @@ class ServerConfigTests(unittest.TestCase):
             should_exit = False
 
         server = FakeServer()
-        observations = iter(([77], []))
-        with patch(
-            "ce_mcp.mcp_server.enumerate_cheat_engine_pids",
-            side_effect=lambda: next(observations),
-        ):
+        with patch("ce_mcp.mcp_server._open_process_handle", return_value=123), \
+                patch("ce_mcp.mcp_server._wait_process_exit", side_effect=(False, True)), \
+                patch("ce_mcp.mcp_server._close_process_handle") as close:
+            anyio.run(_watch_ce_exit, server, 77, 0.001)
+        self.assertTrue(server.should_exit)
+        close.assert_called_once_with(123)
+
+    def test_ce_exit_watcher_handles_exit_before_open(self) -> None:
+        class FakeServer:
+            should_exit = False
+
+        server = FakeServer()
+        with patch("ce_mcp.mcp_server._open_process_handle", side_effect=OSError()), \
+                patch("ce_mcp.mcp_server.enumerate_cheat_engine_pids", return_value=[]):
             anyio.run(_watch_ce_exit, server, 77, 0.001)
         self.assertTrue(server.should_exit)

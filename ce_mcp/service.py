@@ -135,6 +135,7 @@ class BackendService:
         "ce.process": {"attach", "detach"},
         "ce.scan": {"start", "refine", "close"},
         "ce.operations": {"cancel"},
+        "ce.artifacts": {"memory_dump", "delete"},
         "ce.debug_control": {"start", "pause", "continue", "detach"},
         "ce.breakpoints": {"set", "remove"},
         "ce.signature": {"start", "close"},
@@ -418,7 +419,12 @@ class BackendService:
             })
             validate(tool["outputSchema"], result)
             return ToolOutcome(result=result)
-        except (ArtifactStoreError, ContractViolation) as exc:
+        except ArtifactStoreError as exc:
+            return self._error(
+                "ARTIFACT_ERROR", str(exc), recoverable=True, safe_to_retry=True,
+                details={"artifactErrorCode": exc.code, **exc.details},
+            )
+        except ContractViolation as exc:
             return self._error(
                 "ARTIFACT_ERROR", str(exc), recoverable=True, safe_to_retry=True,
             )
@@ -519,6 +525,7 @@ class BackendService:
                     "version": self._backend_version,
                     "protocolVersion": 1,
                 },
+                "cheatEngine": {"version": "unknown"},
                 **result,
             }
             capabilities = result.get("capabilities")
@@ -665,7 +672,8 @@ class BackendService:
             return ToolOutcome(result=result)
         except ArtifactStoreError as exc:
             return self._error(
-                "ARTIFACT_ERROR", str(exc), recoverable=True, safe_to_retry=True
+                "ARTIFACT_ERROR", str(exc), recoverable=True, safe_to_retry=True,
+                details={"artifactErrorCode": exc.code, **exc.details},
             )
 
     def _call_structure(
@@ -830,6 +838,7 @@ class BackendService:
         safe_to_retry: bool,
         suggested_action: str | None = None,
         next_actions: tuple[NextAction, ...] = (),
+        details: Mapping[str, Any] | None = None,
     ) -> ToolOutcome:
         return ToolOutcome(
             error=ErrorDetail(
@@ -839,5 +848,6 @@ class BackendService:
                 safe_to_retry=safe_to_retry,
                 suggested_action=suggested_action,
                 next_actions=next_actions,
+                details=details,
             )
         )

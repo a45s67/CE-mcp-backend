@@ -96,7 +96,8 @@ and preserve returned session, generation, and debugger stop-generation values.
 Close owned operations and breakpoints. Never automatically retry an
 `OUTCOME_UNKNOWN` mutation.
 
-`structuredContent` is authoritative; `content` is a short summary.
+Tool results contain one complete JSON object in the MCP text `content` block;
+the server does not advertise or return `structuredContent`.
 `suggestedAction` and `nextActions` are optional backend-authored hints, not CE
 or MCP directives, and are never executed by the server.
 
@@ -136,12 +137,15 @@ overwrite an existing bridge. Start CE afterward and keep it running.
 
 Merge this local MCP entry into your project's `opencode.json` or global
 `~/.config/opencode/opencode.json`, replacing the repository path with your
-absolute checkout path:
+absolute checkout path. If you already have a `ce-mcp` remote entry, replace
+that entry with the local configuration below (remove its `url`). Preserve
+other entries under `mcp`, such as `idalib`:
 
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "cheat-engine": {
+    "ce-mcp": {
       "type": "local",
       "command": [
         "uv",
@@ -153,7 +157,8 @@ absolute checkout path:
         "--transport",
         "stdio"
       ],
-      "enabled": true
+      "enabled": true,
+      "timeout": 120000
     }
   }
 }
@@ -161,6 +166,7 @@ absolute checkout path:
 
 OpenCode launches the stdio server; do not launch a separate stdio process
 manually. This setup needs neither an HTTP token nor `mcp\config.json`.
+The startup timeout allows time for uv to prepare the environment on first run.
 Restart OpenCode after updating its configuration and check `opencode mcp list`.
 
 For a bridge-only source test, avoid the release's automatic HTTP startup:

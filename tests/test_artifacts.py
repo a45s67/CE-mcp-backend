@@ -1,8 +1,11 @@
 import tempfile
 from datetime import datetime, timedelta, timezone
 import json
+import hashlib
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from ce_mcp.artifacts import ArtifactStore, ArtifactStoreError
 from ce_mcp.fake_bridge import FakeBridge
@@ -97,6 +100,56 @@ class ArtifactStoreTests(unittest.TestCase):
             self.assertEqual(store.prune(), [artifact["artifactId"]])
             self.assertFalse(metadata_path.exists())
             self.assertFalse((root / f"{artifact['artifactId']}.bin").exists())
+
+    def test_metadata_semantics_are_structured_and_list_pages_only_valid_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = ArtifactStore(root)
+            artifacts = [self._create(store, value) for value in (b"a", b"b", b"c")]
+            invalid_path = root / f"{artifacts[1]['artifactId']}.json"
+            invalid = json.loads(invalid_path.read_text(encoding="utf-8"))
+            invalid["generation"] = True
+            invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
+
+            with self.assertRaises(ArtifactStoreError) as raised:
+                store.metadata(artifacts[1]["artifactId"])
+            self.assertEqual(raised.exception.code, "INVALID_ARTIFACT_METADATA")
+            self.assertEqual(raised.exception.details["field"], "generation")
+
+            first, total = store.list(offset=0, limit=1)
+            second, second_total = store.list(offset=1, limit=1)
+            self.assertEqual(total, 2)
+            self.assertEqual(second_total, 2)
+            self.assertEqual(
+                {first[0]["artifactId"], second[0]["artifactId"]},
+                {artifacts[0]["artifactId"], artifacts[2]["artifactId"]},
+            )
+
+    def test_unchanged_artifact_uses_cached_full_file_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            artifact = self._create(store, b"cache me")
+            with patch("ce_mcp.artifacts.hashlib.sha256", wraps=hashlib.sha256) as sha256:
+                store.metadata(artifact["artifactId"])
+                store.metadata(artifact["artifactId"])
+            self.assertEqual(sha256.call_count, 1)
+
+    def test_cache_rejects_same_size_timestamp_restored_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = ArtifactStore(root)
+            artifact = self._create(store, b"a" * 4096)
+            store.metadata(artifact["artifactId"])
+            data_path = root / f"{artifact['artifactId']}.bin"
+            before = data_path.stat()
+            with data_path.open("r+b") as stream:
+                stream.seek(1000)
+                stream.write(b"b")
+            os.utime(data_path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+            with self.assertRaises(ArtifactStoreError) as raised:
+                store.metadata(artifact["artifactId"])
+            self.assertEqual(raised.exception.code, "ARTIFACT_INTEGRITY_ERROR")
 
 
 class ArtifactServiceTests(unittest.TestCase):
@@ -199,6 +252,27 @@ class ArtifactServiceTests(unittest.TestCase):
             self.assertEqual(outcome.error.code, "NO_TARGET")  # type: ignore[union-attr]
         unavailable = BackendService(FakeBridge(), TOOL_DIR).call_tool("ce.artifacts", {"action": "list"})
         self.assertEqual(unavailable.error.code, "CAPABILITY_UNAVAILABLE")  # type: ignore[union-attr]
+
+    def test_invalid_metadata_error_keeps_structured_store_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = ArtifactStore(root)
+            artifact = ArtifactStoreTests._create(store)
+            metadata_path = root / f"{artifact['artifactId']}.json"
+            value = json.loads(metadata_path.read_text(encoding="utf-8"))
+            value["sha256"] = "not-a-digest"
+            metadata_path.write_text(json.dumps(value), encoding="utf-8")
+            service = BackendService(FakeBridge(), TOOL_DIR, artifact_store=store)
+
+            outcome = service.call_tool("ce.artifacts", {
+                "action": "get_metadata", "artifactId": artifact["artifactId"],
+            })
+            self.assertEqual(outcome.error.code, "ARTIFACT_ERROR")  # type: ignore[union-attr]
+            self.assertEqual(
+                outcome.error.details["artifactErrorCode"],  # type: ignore[union-attr,index]
+                "INVALID_ARTIFACT_METADATA",
+            )
+            self.assertEqual(outcome.error.details["field"], "sha256")  # type: ignore[union-attr,index]
 
 
 if __name__ == "__main__":

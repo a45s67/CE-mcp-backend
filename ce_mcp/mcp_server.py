@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hmac
 import os
 from pathlib import Path
@@ -200,12 +201,59 @@ def create_http_app(service: BackendService, host: str, port: int, token: str):
     )
 
 
+def _open_process_handle(pid: int):
+    if os.name != "nt":
+        return None
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "cannot observe Cheat Engine process")
+    return handle
+
+
+def _wait_process_exit(handle, timeout_ms: int) -> bool:
+    if handle is None:
+        return False
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+    result = kernel32.WaitForSingleObject(handle, timeout_ms)
+    if result == 0:  # WAIT_OBJECT_0
+        return True
+    if result == 0x102:  # WAIT_TIMEOUT
+        return False
+    raise OSError(ctypes.get_last_error(), "cannot wait for Cheat Engine process")
+
+
+def _close_process_handle(handle) -> None:
+    if handle is None:
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle(handle)
+
+
 async def _watch_ce_exit(server, ce_pid: int, poll_seconds: float = 0.5) -> None:
-    while True:
-        await anyio.sleep(poll_seconds)
+    try:
+        handle = _open_process_handle(ce_pid)
+    except OSError:
         if ce_pid not in enumerate_cheat_engine_pids():
             server.should_exit = True
             return
+        raise
+    try:
+        if handle is None:
+            while ce_pid in enumerate_cheat_engine_pids():
+                await anyio.sleep(poll_seconds)
+        else:
+            timeout_ms = max(1, round(poll_seconds * 1000))
+            while not await anyio.to_thread.run_sync(_wait_process_exit, handle, timeout_ms):
+                pass
+        server.should_exit = True
+    finally:
+        _close_process_handle(handle)
 
 
 async def _run_http(

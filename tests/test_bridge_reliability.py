@@ -160,7 +160,7 @@ DEBUG_FIXTURE = """
 local state = { generation = 7, debug = {
   active = true, stopped = true, stopGeneration = 3, processSuspended = false,
   eventCounter = 0, events = {}, breakpoints = {}, breakpointCounter = 0,
-  callbackInstalled = false,
+  callbackInstalled = false, callbackFunction = nil, ownership = "owned",
 } }
 local nativeActive, nativeContext = true, true
 local activeCalls, contextCalls, continueCalls, hardwareCalls = 0, {}, {}, 0
@@ -188,9 +188,11 @@ function debug_setBreakpoint(address, size, trigger, method, callback)
   assert(address == 0x1000 and size == 1)
   assert(trigger == bptExecute and method == bpmDebugRegister)
   breakpointCallback = callback
-  return true
+  return true, 77
 end
 function debug_removeBreakpoint() error("must not remove hardware slots for stepping") end
+local removedBreakpointIds = {}
+function debug_removeBreakpointByID(id) removedBreakpointIds[#removedBreakpointIds + 1] = id return true end
 """
 
 DEBUG_LIFECYCLE_FIXTURE = DEBUG_FIXTURE + """
@@ -771,7 +773,7 @@ recordDebugStop("fixture", nil)
 local nextPage = handlers["debug.events.list"]({ cursor = result.nextCursor })
 assert(#nextPage.items == 1 and nextPage.items[1].eventId == "dbg-00000007-00000001")
 assert(nextPage.droppedEvents == 0 and nextPage.truncated == false)
-""", sections=DEBUG, setup=DEBUG_FIXTURE)
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
 
     def test_debug_events_rollover_preserves_sequence_without_duplicates_or_skips(self) -> None:
         for producer in ("recordDebugStop", "breakpointCallback"):
@@ -796,7 +798,7 @@ for i, event in ipairs(nextPage.items) do
 end
 assert(nextPage.nextCursor == nextPage.items[156].eventId)
 assert(nextPage.session.generation == 7)
-""", sections=DEBUG, setup=DEBUG_FIXTURE)
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
 
     def test_debug_events_rollover_reports_only_lost_undelivered_events(self) -> None:
         self.assert_lua("""
@@ -816,7 +818,7 @@ for i, event in ipairs(nextPage.items) do
 end
 local fromStart = handlers["debug.events.list"]({ limit = 1 })
 assert(fromStart.droppedEvents == 44 and fromStart.items[1].eventId == page.items[1].eventId)
-""", sections=DEBUG, setup=DEBUG_FIXTURE)
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
 
     def test_debug_events_empty_tail_retains_cursor_then_delivers_new_events_once(self) -> None:
         self.assert_lua("""
@@ -858,6 +860,129 @@ for i = 1, 256 do recordDebugStop("fixture", nil) end
 local page = handlers["debug.events.list"]({ limit = limit })
 assert(#page.items == count and page.truncated == true and page.droppedEvents == 0)
 assert(page.nextCursor == page.items[count].eventId)
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_debug_summary_reports_native_interface_and_owned_breakpoint_count(self) -> None:
+        self.assert_lua("""
+local expected = { [1]='windows', [2]='veh', [3]='kernel', [4]='mac', [5]='gdb', [99]='unknown' }
+state.debug.breakpoints.owned = {}
+for id, name in pairs(expected) do
+  function debug_getCurrentDebuggerInterface() return id end
+  local result = debugSummary()
+  assert(result.interface == name, result.interface)
+  assert(result.breakpointCount == 1)
+end
+function debug_getCurrentDebuggerInterface() error('unavailable') end
+assert(debugSummary().interface == 'unknown')
+debug_getCurrentDebuggerInterface = nil
+assert(debugSummary().interface == 'unknown')
+nativeActive = false
+assert(debugSummary().interface == 'none')
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_debug_start_accepts_matching_existing_native_interface(self) -> None:
+        self.assert_lua("""
+state.debug.ownership = 'none'
+function debug_getCurrentDebuggerInterface() return 2 end
+function debugProcess() error('must not restart an existing debugger') end
+local result = handlers['debug.control.start']({ interface='veh' })
+assert(result.debugger.active and result.debugger.interface == 'veh')
+assert(result.adopted and not result.started)
+assert(state.debug.ownership == 'adopted' and state.debug.callbackInstalled)
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_debug_start_without_interface_uses_configured_default(self) -> None:
+        self.assert_lua("""
+nativeActive = false
+local argumentCount = -1
+function debugProcess(...) argumentCount = select('#', ...); nativeActive = true return true end
+function debug_getCurrentDebuggerInterface() return 2 end
+local result = handlers['debug.control.start']({})
+assert(argumentCount == 0)
+assert(result.started and not result.adopted)
+assert(result.debugger.interface == 'veh' and result.debugger.ownership == 'owned')
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_repeated_debug_start_preserves_owned_control(self) -> None:
+        self.assert_lua("""
+state.debug.ownership = 'owned'
+function debug_getCurrentDebuggerInterface() return 1 end
+local result = handlers['debug.control.start']({ interface='windows' })
+assert(not result.started and not result.adopted)
+assert(result.debugger.ownership == 'owned')
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_cleanup_never_resumes_or_detaches_adopted_debugger(self) -> None:
+        self.assert_lua("""
+state.debug.ownership = 'adopted'
+state.debug.stopped = true
+local detached = false
+function detachIfPossible() detached = true end
+cleanupDebugger()
+assert(#continueCalls == 0 and not detached and nativeActive)
+assert(state.debug.ownership == 'none')
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
+
+    def test_cleanup_detaches_only_owned_debugger(self) -> None:
+        self.assert_lua("""
+state.debug.ownership = 'owned'
+state.debug.stopped = true
+local detached = false
+function detachIfPossible() detached = true; nativeActive = false end
+cleanupDebugger()
+assert(#continueCalls == 1 and continueCalls[1] == co_run and detached)
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
+
+    def test_callback_cleanup_does_not_overwrite_later_replacement(self) -> None:
+        self.assert_lua("""
+state.debug.ownership = 'adopted'
+local original = function() return 1 end
+local replacement = function() return 2 end
+debugger_onBreakpoint = original
+installDebuggerCallback()
+debugger_onBreakpoint = replacement
+cleanupDebugger()
+assert(debugger_onBreakpoint == replacement)
+""", sections=DEBUG_LIFECYCLE, setup=DEBUG_LIFECYCLE_FIXTURE)
+
+    def test_debug_start_rejects_active_interface_conflict_without_restart(self) -> None:
+        self.assert_lua("""
+function debug_getCurrentDebuggerInterface() return 2 end
+function debugProcess() error('must not restart an existing debugger') end
+local result = handlers['debug.control.start']({ interface='windows' })
+assert(result.__error and result.code == 'DEBUGGER_INTERFACE_CONFLICT')
+assert(result.safeToRetry == false)
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_debug_start_selects_windows_and_veh_native_ids(self) -> None:
+        for interface, native_id in (("windows", 1), ("veh", 2)):
+            with self.subTest(interface=interface):
+                self.assert_lua(f"""
+nativeActive = false
+local selected = nil
+function debugProcess(id) selected = id; nativeActive = true; return true end
+function debug_getCurrentDebuggerInterface() return selected end
+local result = handlers['debug.control.start']({{ interface='{interface}' }})
+assert(selected == {native_id})
+assert(result.debugger.active and result.debugger.interface == '{interface}')
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_breakpoint_remove_uses_native_id_and_logically_releases(self) -> None:
+        self.assert_lua("""
+local installed = handlers['debug.breakpoints.set']({ address='0x1000', trigger='execute' })
+assert(installed.breakpoint.breakpointId and #removedBreakpointIds == 0)
+local removed = handlers['debug.breakpoints.remove']({ breakpointId=installed.breakpoint.breakpointId })
+assert(removed.removed and #removedBreakpointIds == 1 and removedBreakpointIds[1] == 77)
+assert(#debugBreakpointItems() == 0)
+""", sections=DEBUG, setup=DEBUG_FIXTURE)
+
+    def test_breakpoint_remove_unknown_outcome_is_not_retryable(self) -> None:
+        self.assert_lua("""
+local installed = handlers['debug.breakpoints.set']({ address='0x1000', trigger='execute' })
+function debug_removeBreakpointByID() error('unknown') end
+local removed = handlers['debug.breakpoints.remove']({ breakpointId=installed.breakpoint.breakpointId })
+assert(removed.__error and removed.code == 'OUTCOME_UNKNOWN' and not removed.safeToRetry)
+assert(#debugBreakpointItems() == 0)
 """, sections=DEBUG, setup=DEBUG_FIXTURE)
 
     def test_debug_refresh_requires_literal_true_context_despite_cached_registers(self) -> None:

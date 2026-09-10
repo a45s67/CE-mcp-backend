@@ -94,6 +94,8 @@ class LuaBridgeTests(unittest.TestCase):
         self.assertIn('rawget(_G, "dbvm_initialized")', handler)
         self.assertNotIn("dbk_initialize(", handler)
         self.assertNotIn("dbvm_initialize(", handler)
+        self.assertIn("pcall(getCEVersion)", handler)
+        self.assertIn("cheatEngine = { version = ceVersion }", handler)
 
     def test_dbvm_methods_have_independent_bridge_policy_and_token_guard(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")
@@ -134,6 +136,25 @@ class LuaBridgeTests(unittest.TestCase):
         cleanup = source[source.index("local function cleanupDebugger"):source.index("local function cleanupHypervisor")]
         self.assertIn("previousOnBreakpoint", cleanup)
         self.assertIn("pcall(unpause)", cleanup)
+
+    def test_debugger_cleanup_and_breakpoint_removal_are_ownership_scoped(self) -> None:
+        source = BRIDGE.read_text(encoding="utf-8")
+        cleanup = source[source.index("local function cleanupDebugger"):source.index("local function cleanupHypervisor")]
+        self.assertIn('ownership == "owned"', cleanup)
+        self.assertIn("debug_removeBreakpointByID", cleanup)
+        self.assertNotIn("debug_removeBreakpoint, breakpoint.address", cleanup)
+        start = source[source.index('handlers["debug.control.start"]'):source.index('handlers["debug.control.pause"]')]
+        self.assertIn('state.debug.ownership = "adopted"', start)
+        self.assertIn("pcall(debugProcess)", start)
+        self.assertNotIn('params.interface or "windows"', start)
+
+    def test_generation_seed_does_not_restart_at_zero_after_lua_reconstruction(self) -> None:
+        source = BRIDGE.read_text(encoding="utf-8")
+        self.assertIn("pcall(getTickCount)", source)
+        self.assertIn("math.random(0, 0x7FFFFFFF)", source)
+        self.assertIn("getCheatEngineProcessID()", source)
+        self.assertIn("generation = generationSeed", source)
+        self.assertNotIn("generation = 0", source)
 
     def test_step_uses_native_continue_modes(self) -> None:
         source = BRIDGE.read_text(encoding="utf-8")

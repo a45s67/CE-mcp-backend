@@ -53,11 +53,13 @@ class McpMetadataTests(unittest.TestCase):
                 r"bytelimit.*lazy.*reads", r"next instruction.*read beyond.*budget",
             ),
             "ce.debug_control": (
-                r"windows debugger", r"refresh.*native stopped truth.*each status/session.*guard",
+                r"windows or veh debugger", r"omitting interface.*configured default",
+                r"adopts.*matching active", r"never resumes or detaches.*adopted",
+                r"native stopped truth.*refreshed.*each status/session.*guard",
                 r"stopgeneration.*current native waiting context.*not.*old snapshot.*lifetime",
                 r"pause.*process suspension.*only run.*no register context",
                 r"not proof.*all architectures.*call variants",
-                r"detach cleanup.*available", r"remove owned breakpoints",
+                r"cleanup.*available", r"remove owned breakpoints",
             ),
             "ce.registers": (
                 r"windows debugger.*guards", r"native stopped truth.*refreshed",
@@ -67,10 +69,11 @@ class McpMetadataTests(unittest.TestCase):
                 r"do not imply every architecture.*call variant.*proven", r"status.*detach cleanup.*available",
             ),
             "ce.breakpoints": (
-                r"windows.*breakpoints", r"per-breakpoint callback.*1.*global callback.*0.*valid",
+                r"windows or veh.*breakpoints", r"per-breakpoint callback.*1.*global callback.*0.*valid",
                 r"hits.*history.*not current stop context.*fresh status.*stopgeneration",
-                r"remove.*logical.*handle.*requests native disable", r"native list deletion.*deferred",
-                r"do not repeat removal.*native list presence", r"only owned.*detach",
+                r"remove.*logical.*handle.*native disable.*ce breakpoint id", r"never.*shared address",
+                r"native list deletion.*deferred",
+                r"do not repeat removal.*native list presence", r"only owned.*release",
             ),
             "ce.memory_read": (
                 r"raw encoding.*hex.*base64.*conversion.*sidecar",
@@ -84,7 +87,7 @@ class McpMetadataTests(unittest.TestCase):
                 r"events.*do not prove.*still stopped",
             ),
             "ce.structures": (r"get.*revision.*before update or delete", r"stale.*rejected", r"fetch and review"),
-            "ce.artifacts": (r"complete:false.*partial.*not.*failed", r"delete only.*own"),
+            "ce.artifacts": (r"complete:false.*partial.*not.*failed", r"different target sessions", r"confirm.*artifactid.*sessionid"),
         }
         tools = {tool.name: tool for tool in build_tool_list(self.service)}
         for name, patterns in caveats.items():
@@ -150,7 +153,7 @@ class McpMetadataTests(unittest.TestCase):
             ("ce.structures", "update", "expectedRevision", (r"revision from get", r"stale.*review")),
             ("ce.structures", "delete", "expectedRevision", (r"revision from get", r"stale.*review")),
             ("ce.artifacts", "preview", "action", (r"complete:false.*partial.*not.*failed",)),
-            ("ce.artifacts", "delete", "action", (r"only.*own",)),
+            ("ce.artifacts", "delete", "action", (r"irreversibly", r"confirm.*artifactid.*sessionid")),
         )
         tools = {tool.name: tool for tool in build_tool_list(self.service)}
         for name, action, property_name, patterns in cases:

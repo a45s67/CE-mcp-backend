@@ -20,6 +20,14 @@ end
 local BRIDGE_VERSION = "0.2.0"
 local PROTOCOL_VERSION = 1
 local MAX_FRAME_BYTES = 8 * 1024 * 1024
+local generationSeed = 0
+do
+  local ok, tick = pcall(getTickCount)
+  local ticks = ok and type(tick) == "number" and math.floor(tick) or 0
+  local randomPart = math.random(0, 0x7FFFFFFF)
+  local cePid = tonumber(getCheatEngineProcessID()) or 0
+  generationSeed = (ticks + randomPart + cePid * 65537) % 0xFFFFFFFF
+end
 
 -- Snapshot bridge policy at startup. Changing the global later does not elevate
 -- an already-running bridge; reload the bridge after intentionally changing it.
@@ -50,7 +58,9 @@ local state = {
   pipe = nil,
   serverLaunchAttempted = false,
   pid = 0,
-  generation = 0,
+  -- openProcess reconstructs the Lua state. A process-uptime seed prevents a
+  -- reconstructed bridge from republishing generation 1 for the same target.
+  generation = generationSeed,
   sessionId = nil,
   logicalDetached = false,
   operations = {},
@@ -59,6 +69,7 @@ local state = {
     active = false, stopped = false, stopGeneration = 0,
     eventCounter = 0, events = {}, breakpoints = {}, breakpointCounter = 0,
     previousOnBreakpoint = nil, callbackInstalled = false,
+    callbackFunction = nil, ownership = "none",
     processSuspended = false,
   },
   hypervisor = { watches = {}, watchCounter = 0, trace = nil, traceCounter = 0 },
@@ -99,22 +110,32 @@ end
 
 local function cleanupDebugger()
   local debugState = state.debug
-  if debugState.callbackInstalled then _G.debugger_onBreakpoint = debugState.previousOnBreakpoint end
+  local ownership = debugState.ownership or "none"
+  if debugState.callbackInstalled
+    and rawget(_G, "debugger_onBreakpoint") == debugState.callbackFunction then
+    _G.debugger_onBreakpoint = debugState.previousOnBreakpoint
+  end
   debugState.callbackInstalled = false
+  debugState.callbackFunction = nil
   debugState.pendingStep = nil
   debugState.previousOnBreakpoint = nil
   for _, breakpoint in pairs(debugState.breakpoints) do
-    pcall(debug_removeBreakpoint, breakpoint.address)
+    if breakpoint.nativeId ~= nil and type(rawget(_G, "debug_removeBreakpointByID")) == "function" then
+      pcall(debug_removeBreakpointByID, breakpoint.nativeId)
+    end
   end
   debugState.breakpoints = {}
-  if debugState.processSuspended then
-    pcall(unpause)
-  elseif debugState.stopped then
-    pcall(debug_continueFromBreakpoint, co_run)
+  if ownership == "owned" then
+    if debugState.processSuspended then
+      pcall(unpause)
+    elseif debugState.stopped then
+      pcall(debug_continueFromBreakpoint, co_run)
+    end
+    local ok, active = pcall(debug_isDebugging)
+    if ok and active == true then pcall(detachIfPossible) end
   end
   debugState.processSuspended = false
-  local ok, active = pcall(debug_isDebugging)
-  if ok and active then pcall(detachIfPossible) end
+  debugState.ownership = "none"
   debugState.active = false
   debugState.stopped = false
   debugState.events = {}
@@ -321,6 +342,10 @@ local function openedProcessStillExists(pid)
   return true, false
 end
 
+local function advanceGeneration()
+  state.generation = (state.generation % 0xFFFFFFFF) + 1
+end
+
 local function refreshTarget(forceGeneration)
   local pid = getOpenedProcessID() or 0
   if pid > 0 then
@@ -331,7 +356,7 @@ local function refreshTarget(forceGeneration)
     cleanupDebugger()
     cleanupOperations()
     cleanupHypervisor()
-    state.generation = state.generation + 1
+    advanceGeneration()
     state.debug.eventCounter = 0
     state.pid = pid
     state.sessionId = pid > 0 and string.format("ce-%08x-%08x", pid, state.generation) or nil
@@ -376,6 +401,9 @@ local handlers = {}
 
 handlers["status.get"] = function(_)
   local current = session()
+  local ceVersion = "unknown"
+  local versionOk, versionValue = pcall(getCEVersion)
+  if versionOk and versionValue ~= nil then ceVersion = tostring(versionValue) end
   local dbkQuery = rawget(_G, "dbk_initialized")
   local dbvmQuery = rawget(_G, "dbvm_initialized")
   local watchApi = type(rawget(_G, "dbvm_watch_writes")) == "function"
@@ -416,6 +444,7 @@ handlers["status.get"] = function(_)
   disabledReasons["dbvm.watch"] = watchApi and hypervisorReason or "DBVM watch API is unavailable"
   disabledReasons["dbvm.trace"] = traceApi and hypervisorReason or "DBVM trace API is unavailable"
   local result = {
+    cheatEngine = { version = ceVersion },
     bridge = { connected = true, version = BRIDGE_VERSION,
       diagnostic = state.diagnostic .. (state.mapDiagnostic and "; memory.map=" .. state.mapDiagnostic or ""),
       dbvmReadiness = readiness },
@@ -531,7 +560,7 @@ handlers["process.detach"] = function(_)
   state.logicalDetached = true
   cleanupDebugger()
   cleanupOperations()
-  state.generation = state.generation + 1
+  advanceGeneration()
   state.debug.eventCounter = 0
   state.sessionId = nil
   state.diagnostic = "logical-detach:ce-handle-retained"
@@ -1152,9 +1181,16 @@ end
 
 local function debugSummary()
   refreshDebugState()
+  local interface = "none"
+  if state.debug.active then
+    local ok, native = pcall(debug_getCurrentDebuggerInterface)
+    interface = ok and ({ [1] = "windows", [2] = "veh", [3] = "kernel",
+      [4] = "mac", [5] = "gdb" })[native] or "unknown"
+  end
   return {
     active = state.debug.active,
-    interface = state.debug.active and "windows" or "none",
+    interface = interface,
+    ownership = state.debug.ownership or "none",
     stopped = state.debug.stopped,
     stopKind = state.debug.processSuspended and "suspend" or (state.debug.stopped and "debugger" or "none"),
     stopGeneration = state.debug.stopGeneration,
@@ -1169,7 +1205,10 @@ end
 local function requireDebuggerStopped(expectedStopGeneration)
   refreshDebugState()
   if not state.debug.active then
-    return errorDetail("DEBUGGER_NOT_ACTIVE", "Windows debugger is not active", true, true)
+    return errorDetail("DEBUGGER_NOT_ACTIVE", "Debugger is not active", true, true)
+  end
+  if state.debug.ownership == "none" then
+    return errorDetail("DEBUGGER_NOT_MANAGED", "Call debugger start to adopt the active debugger first", true, true)
   end
   if not state.debug.stopped then
     return errorDetail("TARGET_RUNNING", "Debugger target is not stopped", true, true)
@@ -1200,7 +1239,7 @@ local function installDebuggerCallback()
   local debugState = state.debug
   if debugState.callbackInstalled then return end
   debugState.previousOnBreakpoint = rawget(_G, "debugger_onBreakpoint")
-  _G.debugger_onBreakpoint = function()
+  debugState.callbackFunction = function()
     -- Record every callback arrival even when a preexisting callback handles
     -- continuation. Fresh native context checks decide whether it remains stopped.
     recordDebugStop(debugState.pendingStep and "step" or "external_break", nil)
@@ -1210,6 +1249,7 @@ local function installDebuggerCallback()
     end
     return 0
   end
+  _G.debugger_onBreakpoint = debugState.callbackFunction
   debugState.callbackInstalled = true
 end
 
@@ -1218,25 +1258,58 @@ handlers["debug.control.status"] = function(_)
 end
 
 handlers["debug.control.start"] = function(params)
-  if params.interface ~= nil and params.interface ~= "windows" then
-    return errorDetail("CAPABILITY_UNAVAILABLE", "Only the Windows debugger is verified", true, false)
+  local requested = params.interface
+  local interfaces = { windows = 1, veh = 2 }
+  local interfaceId = requested and interfaces[requested] or nil
+  if requested ~= nil and interfaceId == nil then
+    return errorDetail("CAPABILITY_UNAVAILABLE", "Unsupported debugger interface: " .. tostring(requested), true, false)
   end
   local summary = debugSummary()
-  if summary.active then return { session = session(), debugger = summary } end
+  if summary.active then
+    if summary.interface ~= "windows" and summary.interface ~= "veh" then
+      return errorDetail("CAPABILITY_UNAVAILABLE",
+        "Active debugger interface is not supported: " .. summary.interface, true, false)
+    end
+    if requested ~= nil and summary.interface ~= requested then
+      return errorDetail("DEBUGGER_INTERFACE_CONFLICT",
+        "Debugger interface " .. summary.interface .. " is already active; requested " .. requested,
+        true, false, "Remove owned breakpoints and detach the active debugger before switching interfaces")
+    end
+    if state.debug.ownership == "none" then
+      installDebuggerCallback()
+      state.debug.ownership = "adopted"
+    end
+    return {
+      session = session(), debugger = debugSummary(), started = false,
+      adopted = state.debug.ownership == "adopted",
+    }
+  end
   installDebuggerCallback()
-  local called, result = pcall(debugProcess, 1)
+  local called, result
+  if requested == nil then called, result = pcall(debugProcess)
+  else called, result = pcall(debugProcess, interfaceId) end
   if not called or result == false then
     cleanupDebugger()
     return errorDetail("CE_API_UNAVAILABLE", "debugProcess failed: " .. tostring(result), true, false)
   end
+  state.debug.ownership = "owned"
   state.debug.active = true
   state.debug.stopped = false
-  return { session = session(), debugger = debugSummary() }
+  summary = debugSummary()
+  if summary.interface ~= "windows" and summary.interface ~= "veh" then
+    cleanupDebugger()
+    return errorDetail("CAPABILITY_UNAVAILABLE",
+      "Configured default debugger is not supported: " .. summary.interface, true, false)
+  end
+  return { session = session(), debugger = summary, started = true, adopted = false }
 end
 
 handlers["debug.control.pause"] = function(params)
   local summary = debugSummary()
-  if not summary.active then return errorDetail("DEBUGGER_NOT_ACTIVE", "Windows debugger is not active", true, true) end
+  if not summary.active then return errorDetail("DEBUGGER_NOT_ACTIVE", "Debugger is not active", true, true) end
+  if state.debug.ownership == "none" then
+    return errorDetail("DEBUGGER_NOT_MANAGED", "Call debugger start to adopt the active debugger first", true, true)
+  end
   if summary.stopped then return { session = session(), debugger = summary, pauseRequested = false } end
   local debugState = state.debug
   local called, result = pcall(pause)
@@ -1249,6 +1322,9 @@ handlers["debug.control.pause"] = function(params)
 end
 
 handlers["debug.control.continue"] = function(params)
+  if state.debug.ownership == "none" then
+    return errorDetail("DEBUGGER_NOT_MANAGED", "Call debugger start to adopt the active debugger first", true, true)
+  end
   local failure = requireDebuggerStopped(params.expectedStopGeneration)
   if failure then return failure end
   local mode = params.mode or "run"
@@ -1273,8 +1349,9 @@ handlers["debug.control.continue"] = function(params)
 end
 
 handlers["debug.control.detach"] = function(_)
+  local owned = state.debug.ownership == "owned"
   cleanupDebugger()
-  return { session = session(), debugger = debugSummary(), detached = true }
+  return { session = session(), debugger = debugSummary(), released = true, detached = owned }
 end
 
 local debugTriggers = { execute = bptExecute, write = bptWrite, access = bptAccess }
@@ -1299,7 +1376,13 @@ end
 
 handlers["debug.breakpoints.set"] = function(params)
   if not state.debug.active then
-    return errorDetail("DEBUGGER_NOT_ACTIVE", "Start the Windows debugger first", true, true)
+    return errorDetail("DEBUGGER_NOT_ACTIVE", "Start the debugger first", true, true)
+  end
+  if state.debug.ownership == "none" then
+    return errorDetail("DEBUGGER_NOT_MANAGED", "Call debugger start to adopt the active debugger first", true, true)
+  end
+  if type(rawget(_G, "debug_removeBreakpointByID")) ~= "function" then
+    return errorDetail("CAPABILITY_UNAVAILABLE", "CE breakpoint ID removal API is unavailable", true, false)
   end
   local count = #debugBreakpointItems()
   if count >= 4 then return errorDetail("BREAKPOINT_LIMIT", "All hardware breakpoint slots are in use", true, true) end
@@ -1319,7 +1402,7 @@ handlers["debug.breakpoints.set"] = function(params)
   local breakpoint = {
     id = id, address = address, trigger = trigger, size = size, generation = state.generation,
   }
-  local installed, installResult = pcall(
+  local installed, installResult, nativeId = pcall(
     debug_setBreakpoint, address, size, triggerValue, bpmDebugRegister,
     function()
       state.debug.stopGeneration = state.debug.stopGeneration + 1
@@ -1341,6 +1424,10 @@ handlers["debug.breakpoints.set"] = function(params)
   if not installed or installResult == false then
     return errorDetail("CE_API_UNAVAILABLE", "Hardware breakpoint install failed", true, false)
   end
+  if nativeId == nil then
+    return errorDetail("OUTCOME_UNKNOWN", "Hardware breakpoint installed without a removable native ID", false, false)
+  end
+  breakpoint.nativeId = nativeId
   state.debug.breakpoints[id] = breakpoint
   return { session = session(), breakpoint = debugBreakpointItems()[count + 1] }
 end
@@ -1348,8 +1435,11 @@ end
 handlers["debug.breakpoints.remove"] = function(params)
   local breakpoint = state.debug.breakpoints[params.breakpointId]
   if not breakpoint then return errorDetail("BREAKPOINT_NOT_FOUND", "Breakpoint handle does not exist", true, true) end
-  pcall(debug_removeBreakpoint, breakpoint.address)
   state.debug.breakpoints[breakpoint.id] = nil
+  local removed, result = pcall(debug_removeBreakpointByID, breakpoint.nativeId)
+  if not removed or result == false then
+    return errorDetail("OUTCOME_UNKNOWN", "Native breakpoint removal outcome is unknown", false, false)
+  end
   return { session = session(), removed = true }
 end
 

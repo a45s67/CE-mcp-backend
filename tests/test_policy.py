@@ -44,6 +44,16 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(outcome.error.code, "PROFILE_DISABLED")  # type: ignore[union-attr]
         self.assertEqual(bridge.calls, [])
 
+    def test_inspect_profile_blocks_artifact_mutations(self) -> None:
+        service = BackendService(FakeBridge(), CONTRACTS, policy=Policy(profile="inspect"))
+        for arguments in (
+            {"action": "memory_dump", "address": "0x1000", "size": 1, "expectedGeneration": 1},
+            {"action": "delete", "artifactId": "art-" + "a" * 32},
+        ):
+            with self.subTest(action=arguments["action"]):
+                outcome = service.call_tool("ce.artifacts", arguments)
+                self.assertEqual(outcome.error.code, "PROFILE_DISABLED")  # type: ignore[union-attr]
+
     def test_status_removes_bridge_claimed_dbvm_enablement_under_debug_profile(self) -> None:
         bridge = FakeBridge()
         bridge.register("status.get", lambda _: {

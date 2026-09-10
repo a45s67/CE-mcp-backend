@@ -54,6 +54,26 @@ class AuditTests(unittest.TestCase):
             outcome = service.call_tool("ce.process", {"action": "attach", "pid": 99})
             self.assertIsNone(outcome.error)
 
+    def test_artifact_writes_are_audited_as_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audit = JsonlAuditLog(root, max_bytes=4096)
+            service = BackendService(FakeBridge(), CONTRACTS, audit_sink=audit)
+            service.call_tool("ce.artifacts", {
+                "action": "memory_dump", "address": "0x1000", "size": 1,
+                "expectedGeneration": 1,
+            })
+            service.call_tool("ce.artifacts", {
+                "action": "delete", "artifactId": "art-" + "a" * 32,
+            })
+            events = [
+                json.loads(line)
+                for line in (root / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+        accepted = [event for event in events if event["phase"] == "accepted"]
+        self.assertEqual([event["action"] for event in accepted], ["memory_dump", "delete"])
+        self.assertTrue(all(event["mutation"] for event in accepted))
+
 
 if __name__ == "__main__":
     unittest.main()

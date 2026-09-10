@@ -103,6 +103,7 @@ class StatusContractTests(unittest.TestCase):
             {
                 "backend": {"version": "0.1.0", "protocolVersion": 1},
                 "bridge": {"connected": False},
+                "cheatEngine": {"version": "unknown"},
                 "capabilities": {
                     "available": ["memory.read"],
                     "enabled": ["memory.read"],
@@ -238,6 +239,21 @@ class PointerContractTests(unittest.TestCase):
 
 
 class DebugContractTests(unittest.TestCase):
+    def test_control_start_accepts_windows_and_veh_only(self) -> None:
+        schema = load_tool("ce.debug_control")["inputSchema"]
+        validate(schema, {"action": "start", "expectedGeneration": 7})
+        for interface in ("windows", "veh"):
+            validate(schema, {"action": "start", "interface": interface, "expectedGeneration": 7})
+        with self.assertRaises(ContractViolation):
+            validate(schema, {"action": "start", "interface": "kernel", "expectedGeneration": 7})
+
+    def test_control_output_accepts_start_and_release_ownership_results(self) -> None:
+        schema = load_tool("ce.debug_control")["outputSchema"]
+        validate(schema, {"action": "start", "session": {}, "debugger": {},
+                          "started": False, "adopted": True})
+        validate(schema, {"action": "detach", "session": {}, "debugger": {},
+                          "released": True, "detached": False})
+
     def test_control_breakpoints_and_events_require_generations(self) -> None:
         validate(
             load_tool("ce.debug_control")["inputSchema"],

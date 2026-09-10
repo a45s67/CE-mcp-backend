@@ -33,6 +33,14 @@ architecture come from the attached session.
   register globals. Process suspension supplies no register context and permits
   only run/unpause. Breakpoint removal releases the logical handle; native list
   deletion may be deferred until after resume. Do not repeat removal for that reason.
+- Debugger `interface` reports the native backend (`unknown` if unreadable).
+  `start` accepts `windows` or `veh`; omission uses CE's configured default and
+  accepts only those two resulting interfaces. A matching active debugger is adopted.
+  Disconnect and release remove MCP hooks but never resume or detach an adopted debugger.
+  Switching an MCP-owned backend requires breakpoint cleanup and debugger detach.
+  `breakpointCount` counts MCP-owned logical handles, not GUI breakpoints. The current
+  breakpoint tool exposes hardware debug registers only and removes them by CE's native
+  breakpoint ID, never by a potentially shared address.
 - Debug events use generation-bound sequence cursors rather than numeric ring
   indices. Discard old cursors when upgrading the bridge. Reuse `nextCursor` even
   on an empty tail, and inspect `droppedEvents` for a retention gap.

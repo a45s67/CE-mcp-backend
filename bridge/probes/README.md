@@ -20,6 +20,7 @@ for a probe.
 
 Use `scripts/probe-native.py` with a new output directory beneath `var/`. It copies
 a minimal runtime and sole autorun, starts a finite owned target, enforces a timeout,
-and records process cleanup. Modes `bridge`, `bridge-debug`, and `bridge-data` test
+and records process cleanup. Modes `bridge`, `bridge-debug`, `bridge-data`, and
+`mcp-live` test
 the source bridge/service path; other modes isolate the native APIs first. Use
 `--step into` or `--step over` with `--mode breakpoint-1` for native stepping.

@@ -9,7 +9,7 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["backend", "bridge", "capabilities"],
+    "required": ["backend", "bridge", "cheatEngine", "capabilities"],
     "properties": {
       "backend": {
         "type": "object",
@@ -29,6 +29,12 @@
           "diagnostic": {"type": "string", "maxLength": 512},
           "dbvmReadiness": {"type": "string", "enum": ["ready", "not-ready", "unverified"]}
         },
+        "additionalProperties": false
+      },
+      "cheatEngine": {
+        "type": "object",
+        "required": ["version"],
+        "properties": {"version": {"type": "string", "minLength": 1, "maxLength": 32}},
         "additionalProperties": false
       },
       "session": {

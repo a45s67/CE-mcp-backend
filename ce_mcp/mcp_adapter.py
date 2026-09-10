@@ -22,6 +22,7 @@ _SHRINKABLE_ARGUMENTS = {
     ("ce.scan", "results"): "limit",
     ("ce.operations", "list"): "limit",
     ("ce.artifacts", "list"): "limit",
+    ("ce.artifacts", "preview"): "size",
     ("ce.debug_events", "list"): "limit",
     ("ce.threads", "list"): "limit",
     ("ce.structures", "list"): "limit",
